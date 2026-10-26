@@ -357,12 +357,14 @@ class BuildTestCase(unittest.TestCase):
         self._real_root = lb.get_output_root
         self._real_probe = lb.probe_video_streams
         self._real_concat = lb.concat_videos
+        self._real_restore = lb.apply_speed_restore
         cbm.get_base_bin_dir = lambda: self.store
         lb.get_output_root = lambda: self.out
         self.probes = {}
         # Keyed by full path: every card stores its video under the same file name.
         lb.probe_video_streams = lambda path: self.probes.get(path)
         self.calls = []
+        self.restores = []
 
         def fake_concat(paths, output_path, mode, fps=24.0, has_audio=False):
             self.calls.append({"paths": paths, "mode": mode, "fps": fps, "has_audio": has_audio})
@@ -372,11 +374,18 @@ class BuildTestCase(unittest.TestCase):
 
         lb.concat_videos = fake_concat
 
+        def fake_restore(path, factor, fps, has_audio):
+            self.restores.append({"path": path, "factor": factor, "fps": fps,
+                                  "has_audio": has_audio})
+
+        lb.apply_speed_restore = fake_restore
+
     def tearDown(self):
         cbm.get_base_bin_dir = self._real_base
         lb.get_output_root = self._real_root
         lb.probe_video_streams = self._real_probe
         lb.concat_videos = self._real_concat
+        lb.apply_speed_restore = self._real_restore
         _support.remove_temp_dir(self.store)
         _support.remove_temp_dir(self.out)
 
@@ -498,6 +507,48 @@ class BuildTestCase(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             lb.build_long_video("Proj")
         self.assertIn("没有可拼接的镜头", str(caught.exception))
+
+    def test_the_default_never_touches_the_speed(self):
+        # 1.0x + no metadata = exactly the old result; the restore pass is not run.
+        self.add_card("Proj", "clip_a", "Shot 1", "")
+        result = lb.build_long_video("Proj")
+        self.assertEqual(self.restores, [])
+        self.assertFalse(result["restored"])
+        self.assertEqual(result["restore_factor"], 1.0)
+        self.assertIn("速度还原：未启用", result["report"])
+
+    def test_the_restore_runs_once_after_the_join_with_the_metadata_factor(self):
+        # The cut-side project recorded 0.5x; the widget disagrees (0.75x), so
+        # the metadata wins, the mismatch is reported, and the restore runs
+        # exactly once - on the finished film, never per segment.
+        self.add_card("Proj", "clip_a", "Shot 1", "")
+        self.add_card("Proj", "clip_b", "Shot 2", "clip_a")
+        lvm_dir = os.path.join(self.out, "h3-lvm", "Proj")
+        os.makedirs(lvm_dir, exist_ok=True)
+        with open(os.path.join(lvm_dir, "h3lvm_index.json"), "w", encoding="utf-8") as stream:
+            json.dump({"playback": {"playback_speed": 0.5}}, stream)
+
+        result = lb.build_long_video("Proj", restore_playback_speed="0.75x")
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(len(self.restores), 1)
+        self.assertEqual(self.restores[0]["factor"], 0.5)
+        self.assertEqual(self.restores[0]["path"], result["path"])
+        self.assertEqual(self.restores[0]["fps"], 24.0)
+        self.assertTrue(self.restores[0]["has_audio"])
+        self.assertTrue(result["restored"])
+        self.assertEqual(result["restore_factor"], 0.5)
+        self.assertTrue(any("0.5x" in w and "0.75x" in w for w in result["warnings"]))
+        self.assertIn("速度还原", result["report"])
+
+    def test_a_widget_factor_without_metadata_is_honoured(self):
+        # Old projects (no cut-side metadata) must not guess - but an explicit
+        # manual choice is the user's own statement and runs as given.
+        self.add_card("Proj", "clip_a", "Shot 1", "")
+        result = lb.build_long_video("Proj", restore_playback_speed="custom",
+                                     restore_playback_speed_custom=0.6)
+        self.assertEqual(self.restores[0]["factor"], 0.6)
+        self.assertEqual(result["restore_factor"], 0.6)
+        self.assertEqual(result["warnings"], [])
 
 
 if __name__ == "__main__":

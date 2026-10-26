@@ -19,6 +19,7 @@ from .long_builder import (
     build_long_video,
     JOIN_AUTO,
     JOIN_MODES,
+    RESTORE_SPEED_OPTIONS,
     VARIANT_PREFER_UP,
     VARIANT_POLICIES,
 )
@@ -60,6 +61,17 @@ class MiniMaxClipBinLongBuilderNode(io.ComfyNode):
                                tooltip='【重编码帧率】只在需要重编码时使用，应与生成时的帧率一致（默认 24）。'),
                 io.String.Input('output_name', optional=True, advanced=True, default='',
                                 tooltip='【输出文件名】可选，留空则用 项目名_段数_时间戳.mp4。输出在 output/h3_long/<项目>/ 下，不会进入卡片库。'),
+                # Appended last on purpose: widget values are restored by
+                # position, so a workflow saved before this pair keeps every
+                # older value and keeps joining exactly as it did.
+                io.Combo.Input('restore_playback_speed', advanced=True, default='1.0x',
+                               display_name='恢复原速倍率',
+                               options=list(RESTORE_SPEED_OPTIONS),
+                               tooltip='【恢复原速倍率】填当初在 H3 Long Video Manager 里切分参考视频时使用的慢放倍率，拼接完成后整片按 1/倍率 加速回原速（如 0.5x → 约 2 倍播放）。只对拼接完成的成片整体执行，不逐段加速。同名切分项目记录了倍率时会以元数据为准，手动选择不一致会提示。1.0x = 不恢复。'),
+                io.Float.Input('restore_playback_speed_custom', optional=True, advanced=True, default=1.0,
+                               display_name='自定义恢复倍率',
+                               min=0.1, max=1.0, step=0.1,
+                               tooltip='【自定义恢复倍率】只在恢复倍率选 custom 时生效：填当初切分用的慢放倍率（0~1.0 的一位小数，如 0.6），不是要再次执行的慢放。'),
             ],
             outputs=[
                 io.Video.Output('video', tooltip='拼好的长视频：可直接接 SaveVideo / VHS_VideoCombine，节点自身也会内联预览。'),
@@ -75,6 +87,8 @@ class MiniMaxClipBinLongBuilderNode(io.ComfyNode):
                join_mode: str = JOIN_AUTO,
                fps: float = 24.0,
                output_name: str = "",
+               restore_playback_speed: str = "1.0x",
+               restore_playback_speed_custom: float = 1.0,
                **kwargs) -> io.NodeOutput:
         result = build_long_video(
             project_name=project_name,
@@ -84,6 +98,8 @@ class MiniMaxClipBinLongBuilderNode(io.ComfyNode):
             join_mode=join_mode,
             fps=fps,
             output_name=output_name,
+            restore_playback_speed=restore_playback_speed,
+            restore_playback_speed_custom=restore_playback_speed_custom,
         )
         for warning in result["warnings"]:
             logger.warning("[Long Builder] %s", warning)
