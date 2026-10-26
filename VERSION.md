@@ -3,6 +3,14 @@
 > 版本铁规：每次改动前，把旧版本完整快照存入 `archive/<日期>-<commit 短 hash>/`，并在本文件顶部追加一条说明。
 > 只有用户的明确命令才能删改 `archive/` 中的旧版本。
 
+## 2026-10-27 · 与原版二选一共存守卫与目录改名（已提交并推送 main）
+
+- 本仓库本地目录已由 `ComfyUI-H3-ClipStream` 改名为 `ComfyUI-H3-ClipStream-Xiyun`，与 GitHub fork 仓库名一致；只改文件夹名，不改节点 ID、路由或工作流数据。
+- 新增 `fork_guard.py`：按内容检测同一 `custom_nodes` 目录下的另一份 ComfyUI-H3-ClipStream（识别 `clipbin/long_nodes.py` 里的 `node_id='MiniMaxClipBinLongBuilder'`），不依赖文件夹名；`.disabled` 目录忽略。
+- 检测到另一份时，熙云版不注册节点、不注册 `/minimax/clip_bin/*` 与 Motion Context 路由，并把 `WEB_DIRECTORY` 设为 `None`，避免同名节点、API 与前端扩展互相覆盖；启动日志给出检测路径和切换方法。
+- 切换方法：要用熙云版，就禁用或改名另一份（例如 `ComfyUI-H3-ClipStream.disabled`）后重启 ComfyUI；要临时强制两份同时加载，设置 `H3_XYIYUN_ALLOW_DUPLICATE=1`（不推荐，同名节点仍会覆盖）。
+- 验证：fork guard 5 个用例 + schema / long builder / speed restore 专项共 **96/96 通过**；真实 ComfyUI 切换由用户验收。
+
 ## 2026-10-27 · Long Builder 合并后恢复原速（已提交并推送 main）
 
 - `MiniMax H3 Clip Long Builder (长视频拼接)` 末尾新增 `restore_playback_speed`（`1.0x` / `0.75x` / `0.5x` / `custom`）与 `restore_playback_speed_custom`，只追加在输入末尾；旧工作流和没有该参数的历史项目仍按原合并逻辑运行。
