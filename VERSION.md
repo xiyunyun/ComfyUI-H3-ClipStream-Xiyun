@@ -3,6 +3,15 @@
 > 版本铁规：每次改动前，把旧版本完整快照存入 `archive/<日期>-<commit 短 hash>/`，并在本文件顶部追加一条说明。
 > 只有用户的明确命令才能删改 `archive/` 中的旧版本。
 
+## 2026-10-27 · Long Builder 合并后恢复原速（已提交并推送 main）
+
+- `MiniMax H3 Clip Long Builder (长视频拼接)` 末尾新增 `restore_playback_speed`（`1.0x` / `0.75x` / `0.5x` / `custom`）与 `restore_playback_speed_custom`，只追加在输入末尾；旧工作流和没有该参数的历史项目仍按原合并逻辑运行。
+- 合并顺序不变：先按 `variant_policy` / `join_mode` / `exclude_clips` / `clip_order` 完成拼接，再对整个成片执行速度还原；不逐段加速，避免接缝偏移和音画不同步。
+- 恢复倍率表示「当初切分时使用的慢放倍率」，成片按 1/倍率播放：视频 `setpts` + `fps`，音频 `atempo`（保持音调）。同名切分项目记录了 `playback` 元数据时以元数据为准，手动选择不一致会给出中文警告；没有元数据时不猜测倍率。
+- 中文显示：`恢复原速倍率` / `自定义恢复倍率`；字段名与存盘值仍为英文，旧工作流兼容。
+- 验证：Long Builder / schema / speed restore 专项 **91/91 通过**；实际成片、音画同步与最终时长由用户验收。
+- 功能提交 `232c471`，已推送 `xiyun/main`；本轮只补写 VERSION.md，不创建 tag，也未新建 `archive/` 快照。
+
 ## 2026-10-24 · `e42d748`（当前基线，= tag `v0.9.0`）
 
 - 快照：改动前的状态就是 `7b7cff1`（= tag `v0.8.0`），已在 `archive/2026-10-24-7b7cff1/`；提交后的快照在 `archive/2026-10-24-e42d748/`（50 个文件，由 `git archive v0.9.0` 解出，与提交内容逐字节相同）。
