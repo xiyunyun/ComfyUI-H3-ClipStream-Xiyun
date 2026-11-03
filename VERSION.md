@@ -3,32 +3,78 @@
 > 版本铁规：每次改动前，把旧版本完整快照存入 `archive/<日期>-<commit 短 hash>/`，并在本文件顶部追加一条说明。
 > 只有用户的明确命令才能删改 `archive/` 中的旧版本。
 
-## 2026-11-03 · 项目素材库卡片菜单移植到 ClipStream（待实机验收）
+## 2026-11-03 · 项目菜单卡顿第一轮优化（已验收）
 
-- 快照：改动前已提交状态 `fcc3b2a` 存入 `archive/2026-11-03-fcc3b2a/`（54 个文件）。工作区里原有的 `motion_context` `frames_cap` 改动不属于本轮，未纳入快照。
-- `MiniMax H3 Dual Clip Picker`、`MiniMax H3 Clip Bin Picker`、`MiniMax H3 Clip Long Builder` 的原生项目下拉框换成与 H3-LVM 相同的卡片菜单：当前项目卡（封面、数量、最后修改时间）、固定弹层网格（搜索、按名称/修改时间排序、正/倒序、3–6 列、新建、重命名、删除）。
-- 后端 `GET /minimax/clip_bin/projects` 增加 `updated_at`（取自项目索引 `last_updated`）与 `cover_url`（第一张带 `preview.png` / 尾帧 / 首帧的卡片，复用 `/view` 预览路由）。Long Builder 仍传 `videos_only=1`，只列含归档视频的项目。
-- 新增 `POST /minimax/clip_bin/project/rename`：整体移动项目文件夹并改写索引 `project_name` 与 `last_updated`；目标名已存在时先拒绝；索引写入失败回滚目录；沿用同源校验与中文错误提示。
-- 选择项目仍只写 `project_name` 控件，不新增节点参数、不改序列化位置，旧工作流不受影响；Dual Picker 与普通 Picker 共用 `clip_bin_picker.js`，一处改动同时生效。
-- 卡片缩放（100%–400%）与 Long Builder 的 fit 高度计算未改动。
-- 验证：`python -m unittest discover -s tests` → **227 通过，跳过 1**（含新增列表封面/更新时间 2 条、重命名 8 条）；`tests/js/long_builder_fit.test.mjs` 16 条、`long_builder_order.test.mjs` 9 条通过；H3-LVM 回归 **697/697 通过**（该插件未改动）；改动 JS 全部通过 `node --check`。浏览器实机视觉与重命名/删除操作待用户验收。
+- 快照：`archive/2026-11-03-6eb3344-xiyun-merge-pre-menu-perf/` 保存本轮前完整融合工作树（55 个源码、文档和测试文件）。
+- 项目弹窗仍先显示已有结果并后台刷新，但数据未变化时不再重建整张网格；当前项目及封面不变时不重复创建图片节点。网格改用 `DocumentFragment` 一次插入，列数切换只改 CSS，不再重建全部卡片。
+- 去掉项目弹窗的全屏 `backdrop-filter`，保留不透回画面的遮罩，降低 ComfyUI 画布持续合成开销。
+- 同一插件、同一项目列表地址的并发请求合并为一个 HTTP 请求；请求结束后立即释放，不引入 TTL 陈旧缓存。每个菜单拿到独立数组副本，避免不同节点补入当前项目时互相修改数据。
+- 自动验证：两个项目菜单的共享请求专项均通过，全部 **9 个 `web/*.js`** 语法检查通过；完整 Python 回归 **218 项通过、1 项既有权限跳过**。实际弹窗流畅度由用户复测。
+- 暂未加入归档视频文件状态缓存：项目与卡片特别多时，列表接口的逐文件检查可能成为下一处磁盘瓶颈，需要基于真实项目计时后再设计。
 
-## 2026-10-27 · 与原版二选一共存守卫与目录改名（已提交并推送 main）
+## 2026-11-03 · Xiyun 新功能融合进原版（已验收）
 
-- 本仓库本地目录已由 `ComfyUI-H3-ClipStream` 改名为 `ComfyUI-H3-ClipStream-Xiyun`，与 GitHub fork 仓库名一致；只改文件夹名，不改节点 ID、路由或工作流数据。
-- 新增 `fork_guard.py`：按内容检测同一 `custom_nodes` 目录下的另一份 ComfyUI-H3-ClipStream（识别 `clipbin/long_nodes.py` 里的 `node_id='MiniMaxClipBinLongBuilder'`），不依赖文件夹名；`.disabled` 目录忽略。
-- 检测到另一份时，熙云版不注册节点、不注册 `/minimax/clip_bin/*` 与 Motion Context 路由，并把 `WEB_DIRECTORY` 设为 `None`，避免同名节点、API 与前端扩展互相覆盖；启动日志给出检测路径和切换方法。
-- 切换方法：要用熙云版，就禁用或改名另一份（例如 `ComfyUI-H3-ClipStream.disabled`）后重启 ComfyUI；要临时强制两份同时加载，设置 `H3_XYIYUN_ALLOW_DUPLICATE=1`（不推荐，同名节点仍会覆盖）。
-- 验证：fork guard 5 个用例 + schema / long builder / speed restore 专项共 **96/96 通过**；真实 ComfyUI 切换由用户验收。
+- 快照：`archive/2026-11-03-6eb3344-pre-xiyun-merge/` 保存融合前原版 `6eb3344` 的 53 个 Git 文件。
+- 功能来源仅为 Xiyun `b87baf7` 的 Motion Context Trim `frames_cap`，以及 `43e0929` 的项目素材库卡片菜单；不接收共存守卫、目录改名或 Xiyun 专属提示。
+- `frames_cap` 默认 0，保持旧行为；设为参考段帧数时先限制有效尾部，再裁掉 pinned 头部，音频同步处理，不增加显存占用。
+- Dual Picker、普通 Picker 与 Long Builder 使用项目卡片菜单，支持封面、数量、修改时间、搜索、排序、3–6 列、新建、重命名与删除；重命名冲突拒绝并在失败时回滚。
+- 原版 `c456e07` 的 Builder 三区布局、拼接与速度设置、自动输出帧率、卡片缩放和预览折叠全部保留；只把原项目下拉框替换为卡片菜单，并把刷新按钮留在卡片工具行。
+- 自动验证：完整 Python **218 项通过、1 项既有 Windows 目录链接权限跳过**；新增 Trim `frames_cap` 3 项覆盖尾部上限、旧行为兼容、非法裁切及音画同步。前端 fit **16/16**、排序 **9/9**、速度 **5/5** 通过，全部 **9 个 `web/*.js`** 语法检查通过。浏览器视觉、项目重命名/删除与实际拼接由用户验收。
 
-## 2026-10-27 · Long Builder 合并后恢复原速（已提交并推送 main）
+## 2026-11-03 · 合并上游卡顿优化与 Builder 基线，保留共存守卫（本 fork 独有）
 
-- `MiniMax H3 Clip Long Builder (长视频拼接)` 末尾新增 `restore_playback_speed`（`1.0x` / `0.75x` / `0.5x` / `custom`）与 `restore_playback_speed_custom`，只追加在输入末尾；旧工作流和没有该参数的历史项目仍按原合并逻辑运行。
-- 合并顺序不变：先按 `variant_policy` / `join_mode` / `exclude_clips` / `clip_order` 完成拼接，再对整个成片执行速度还原；不逐段加速，避免接缝偏移和音画不同步。
-- 恢复倍率表示「当初切分时使用的慢放倍率」，成片按 1/倍率播放：视频 `setpts` + `fps`，音频 `atempo`（保持音调）。同名切分项目记录了 `playback` 元数据时以元数据为准，手动选择不一致会给出中文警告；没有元数据时不猜测倍率。
-- 中文显示：`恢复原速倍率` / `自定义恢复倍率`；字段名与存盘值仍为英文，旧工作流兼容。
-- 验证：Long Builder / schema / speed restore 专项 **91/91 通过**；实际成片、音画同步与最终时长由用户验收。
-- 功能提交 `232c471`，已推送 `xiyun/main`；本轮只补写 VERSION.md，不创建 tag，也未新建 `archive/` 快照。
+- 合并上游 `c456e07`（Clip Bin 读取/存盘性能、Long Builder 三区面板与速度/自动帧率）、`6eb3344`（基线记录）、`ba4ed38`（项目卡片菜单与 `frames_cap`）。
+- 上游的项目菜单已修好本 fork 之前记录的卡顿点：数据未变化时不整表重绘、当前封面不重建、网格用 `DocumentFragment` 一次插入、列数切换只改 CSS、移除项目弹层全屏 `backdrop-filter`、同一列表地址的并发请求合并（`projectRequests`，结束即释放，不引入 TTL 缓存）。本 fork 直接采用这一版，不再保留自己的旧的 702 行 `project_menu.js`。
+- 冲突处理：`VERSION.md` 手工合并；`clipbin/long_builder.py`、`clipbin/long_nodes.py`、`tests/test_node_schema.py`、`web/clip_bin_picker.css`、`web/long_builder_panel.js`、`web/project_menu.js` 采用上游版本；`clipbin/clip_bin_api.py`、`clipbin/clip_bin_manager.py`、`web/clip_bin_picker.js` 自动合并后逐个核对，最终与上游一致。合并后树内除守卫相关文件外与上游一致。
+- **Long Builder 参数改名**：上游把本 fork 之前的 `restore_playback_speed` / `restore_playback_speed_custom` 定为 `playback_speed` / `playback_speed_custom`（语义相同，位置仍是输入末尾 8/9）。按名字恢复时旧工作流的这两项会回落到默认值；本机两份旧工作流只存过 `1.0x` 与 `custom=1.0`，实际成片行为不变。若其他用户的旧工作流存过 `0.5x` / `0.75x`，需要在 Long Builder 里重新选择一次。
+- 删除过时的 `tests/test_speed_restore.py` 与 `tests/test_long_builder.py` 里本 fork 旧 `apply_speed_restore` 的 51 行用例：它们测试的函数已被上游 `parse_playback_speed` / 自动帧率实现取代，上游自带的速度用例继续保留。
+- 本 fork 独有内容保留：`fork_guard.py`、`__init__.py` 的共存检测、`tests/test_fork_guard.py`、根目录提示 txt。
+- 验证：完整 Python **223/223 通过（1 项既有权限跳过）**；前端 fit **16/16**、排序 **9/9**、速度 **5/5** 通过；9 个 `web/*.js` 全部通过 `node --check`；无冲突标记残留。
+
+## 2026-10-27 · `c456e07`（原版功能基线）
+
+- 功能提交 `c456e07 feat: optimize clip media handling and long builder playback` 汇总下方五轮累计改动：Clip Bin 读取与 MP4 存盘性能优化、Long Builder 原速恢复、三区面板与分区顺序、恢复原速时自动匹配输出帧率。共 14 个文件，未改动节点 id，Long Builder 新输入仍只追加在原 schema 末尾。
+- 发布副本与已测开发副本逐文件核对为 **53 文件 / 0 差异**；提交前复跑完整 Python **205 项通过、1 项既有权限跳过**，前端 **30 项通过**，全部 **8 个 JS** 语法及 Python 编译检查通过。真实 FFmpeg 的 `0.5x` / `0.75x` 两组均保留 **96/96 帧**，音调均为 440Hz。
+- 运行副本已同步并核对 **53 文件 / 0 mismatch / 0 stale**。用户已确认可以推送；本次只更新 `main`，**不创建 tag**。
+
+## 2026-10-27 · Long Builder 原速恢复自动帧率（已纳入 `c456e07`）
+
+- 快照：`archive/2026-10-27-builder-auto-fps/` 保存本轮修改前的完整累计工作树（53 文件，不含 `.git`、历史 `archive/` 与缓存）。
+- `fps` 的面板名称与说明改为「基准帧率」，输入 id、schema 顺序和默认值不变。普通重编码及 `1.0x` 仍直接按基准帧率输出；恢复原速时自动计算 `输出帧率 = 基准帧率 ÷ 切片慢放倍率`，因此 `24fps + 0.5x → 48fps`、`24fps + 0.75x → 32fps`，不再为了恢复原速而丢弃约一半或四分之一的已渲染帧。
+- FFmpeg 仍使用 `setpts + fps` 同步缩短视频时间轴，音频继续 `atempo` 保音调；无损直拷规则、`copy` 冲突报错和既有输入接口均未改变。重编码后的回退帧数按输出时长 × 自动输出帧率计算，直拷仍按源段实测帧数求和。面板速度说明直接显示自动输出帧率，报告同时记录基准与输出帧率。
+- 自动验证：完整 Python 回归 **205 项通过、1 项跳过**（既有 Windows 目录链接权限用例）；前端 **30 项通过**；全部 **8 个 `web/*.js`** 语法检查通过，两个改动 Python 文件编译通过。真实 FFmpeg 使用同一段 4 秒 / 96 帧 / 24fps / 440Hz 素材分别验证：`0.5x` 恢复为 48fps、`0.75x` 恢复为 32fps，两种结果都准确保留 **96/96 帧**，音频峰值均为 **440Hz**。
+- 部署：已同步到 `E:\ai\ComfyUI-aki-v3\ComfyUI\custom_nodes\ComfyUI-H3-ClipStream`，首次复制本轮 8 个差异文件，完整核对 **53 文件 / 0 mismatch / 0 stale**。功能提交为 `c456e07`，未打 tag。
+- 未验证：ComfyUI 内实际项目拼接与面板文案由用户手动验收；测试前需完全重启 ComfyUI 并 `Ctrl+F5`。
+
+## 2026-10-27 · Long Builder 分区顺序调整（已纳入 `c456e07`）
+
+- 快照：`archive/2026-10-27-builder-section-order/` 保存调整前的完整累计工作树（53 文件，不含 `.git`、历史 `archive/` 与缓存）。
+- 面板展示顺序改为「01 拼接与速度 / 02 项目与卡片 / 03 成片预览」，拼接设置置顶；仅调整 DOM 追加顺序和编号，参数、执行逻辑、卡片区域伸缩及预览折叠行为不变。
+- 验证：全部 8 个 `web/*.js` 语法检查通过，前端 29 项回归通过。浏览器最终视觉由用户验收；已纳入 `c456e07`，未打 tag。
+
+## 2026-10-27 · Long Builder 原速恢复与三区面板（已纳入 `c456e07`）
+
+- 快照：`archive/2026-10-27-970f020/` 保存本轮修改前的完整 `970f020` Git 基线（50 文件，由 `git archive HEAD` 解出）；前两轮性能优化的运行副本改动已合并回本开发副本，没有被本轮覆盖回退。
+- `MiniMaxClipBinLongBuilder` 在输入末尾追加 `playback_speed` / `playback_speed_custom`，旧工作流位置不变。用户选择切片当初的慢放倍率，Builder 自动按倒数恢复原速；`1.0x` 保持原行为，`0.5x → 2x`、`0.75x → 约 1.333x`。恢复时视频使用 `setpts + fps` 重编码，音频使用分段 `atempo` 保音调；`copy` 与速度恢复冲突会中文报错，普通参数一致的 `1.0x` 拼接仍无损直拷。
+- 面板重组为「01 项目与卡片 / 02 拼接与速度 / 03 成片预览」。项目、刷新、卡片缩放与卡片墙同区；变体、拼接、帧率、输出名与速度设置同区；原生 widgets 只隐藏、不改序列化位置。速度选项直接显示恢复倍率，摘要显示恢复后的成片时长，自定义倍率只在 `custom` 时启用。卡片拖拽、屏蔽、缩放和预览折叠逻辑继续复用。
+- 同时修正 `tests/test_mp4_encoding.py` 的 `_support` 导入，避免 `unittest discover` 误加载 ComfyUI 自带的 `tests` 包而造成“测试没真正跑到”。
+- 自动验证：完整 `unittest discover -s tests` **204 项通过、1 项跳过**；跳过仍是 Windows 无目录链接权限的既有用例。前端 **29 项通过**，全部 **8 个 `web/*.js`** 语法检查通过。真实 FFmpeg 以 4 秒 / 96 帧 / 24fps / 440Hz 素材验证 `0.5x` 恢复：视频 2 秒 / 48 帧 / 24fps，音频峰值仍为 440Hz；并消除了 `setpts + -r` 组合尾部多约 2 帧的问题。
+- 未验证：浏览器中的三区最终视觉、卡片拖拽及实际项目手操由用户验收。已纳入 `c456e07`，未打 tag；Python 改动需完全重启 ComfyUI，之后硬刷新页面。
+
+## 2026-10-24 · 性能优化第二轮（已纳入 `c456e07`）
+
+- 快照：`archive/2026-10-24-970f020-performance-round1/` 保存用户已验收的第一轮完整工作树（50 文件，逐文件哈希一致）。
+- Clip Bin 的 MP4 编码改为每次转换并写入 8 帧，不再为整段视频同时保留转换后的 uint8 张量与完整 `rawvideo` 字节副本。
+- ffmpeg 参数、音频、保存位置与卡片数据不变。stdout/stderr 不再形成可堵塞管道；stdin 关闭后等待结果，异常时清理未退出进程。
+- 自动验证：`tests/test_mp4_encoding.py` 3 条（真实 ffmpeg 的 8+2 帧写入、帧数/像素/音频流、非零退出、BrokenPipe 清理）；完整 `unittest discover` **198 条通过、1 条跳过**。跳过仍是 Windows 无目录链接权限的既有 `test_rejects_a_card_that_is_a_link`，与本轮无关。
+- 尚未做 ComfyUI 内大项目峰值内存计时；后续已同步运行副本并纳入 `c456e07`，未单独标记版本。
+
+## 2026-10-24 · 性能优化第一轮（已纳入 `c456e07`）
+
+- 快照：`archive/2026-10-24-970f020-performance/` 保存本轮修改前的完整 `970f020` 基线。
+- 本轮范围：Long Builder 复用完整且仍匹配文件状态的 probe 缓存，并用字典解析卡片元数据；Picker 合并执行完成刷新，选卡不再发起两次图库请求。拼接规则与节点接口不变。
+- 自动验证：专项 `tests.test_long_builder + tests.test_projects_api` **85/85 通过**；完整 `unittest discover` **195 条通过、1 条跳过**。跳过项是 `test_rejects_a_card_that_is_a_link`，当前 Windows 进程没有创建目录链接权限（WinError 1314），与本轮改动无关；两仓库全部 24 个 `web/*.js` 均通过 `node --check`。
+- 尚未做真实项目请求计数或性能计时；后续已同步运行副本并纳入 `c456e07`，未单独标记版本。
 
 ## 2026-10-24 · `e42d748`（当前基线，= tag `v0.9.0`）
 

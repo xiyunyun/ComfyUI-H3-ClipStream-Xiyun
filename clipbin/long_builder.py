@@ -22,11 +22,11 @@ Two rules keep the result honest:
 
 import json
 import logging
+import math
 import os
 import re
 import shutil
 import subprocess
-import tempfile
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -55,151 +55,56 @@ JOIN_COPY = "copy（只允许无损直拷，参数不一致报错）"
 JOIN_REENCODE = "reencode（统一重编码）"
 JOIN_MODES = (JOIN_AUTO, JOIN_COPY, JOIN_REENCODE)
 
-# ---------------------------------------------------------------------------
-# Playback-speed restore (mirror of the H3 Long Video Manager's slowdown)
-# ---------------------------------------------------------------------------
-
-#: The same options the cut side offers. The value here says "the reference
-#: video was slowed to THIS factor when it was cut"; the restore itself plays
-#: the merged film at 1/factor (e.g. 0.5x -> 2x playback).
-RESTORE_SPEED_OPTIONS = ("1.0x", "0.75x", "0.5x", "custom")
-
-#: The H3 Long Video Manager stores its project index here (its own bin root
-#: is <output>/h3-lvm). Read-only on this side; the name is the project name.
-LVM_BIN_DIR_NAME = "h3-lvm"
-LVM_INDEX_NAME = "h3lvm_index.json"
+PLAYBACK_SPEED_OPTIONS = ("1.0x", "0.75x", "0.5x", "custom")
 
 
-def parse_restore_speed(restore_playback_speed, restore_playback_speed_custom=1.0) -> float:
-    """Validates a restore-speed widget pair into a float in (0, 1.0].
-
-    Same numeric rules as the cut node: presets keep their exact value
-    (0.75 stays two decimals), a custom value is rounded to one decimal, and
-    anything outside (0, 1.0] is refused.
-    """
-    choice = str(restore_playback_speed if restore_playback_speed is not None else "1.0x").strip()
+def parse_playback_speed(playback_speed, playback_speed_custom=1.0) -> float:
+    """Returns the slow-motion factor stored by the cutting nodes, in (0, 1]."""
+    choice = str(playback_speed if playback_speed is not None else "1.0x").strip()
     if choice.lower() == "custom":
         try:
-            value = float(restore_playback_speed_custom)
+            value = float(playback_speed_custom)
         except (TypeError, ValueError):
-            raise ValueError("h3_clipstream: 自定义恢复倍率必须是数字（收到 %r）。"
-                            % (restore_playback_speed_custom,))
+            raise ValueError("自定义切片慢放倍率必须是数字，收到 %r。" % (playback_speed_custom,))
         value = round(value, 1)
         if value <= 0 or value > 1.0:
-            raise ValueError("h3_clipstream: 自定义恢复倍率必须在 (0, 1.0] 之间（收到 %s）。" % value)
+            raise ValueError("自定义切片慢放倍率必须在 (0, 1.0] 之间（收到 %s）。" % value)
         return value
     text = choice[:-1] if choice.lower().endswith("x") else choice
     try:
         value = float(text)
     except ValueError:
-        raise ValueError("h3_clipstream: 未知的恢复倍率选项：%r。" % (restore_playback_speed,))
+        raise ValueError("未知的切片慢放倍率选项：%r。" % (playback_speed,))
     if value <= 0 or value > 1.0:
-        raise ValueError("h3_clipstream: 恢复倍率必须在 (0, 1.0] 之间（收到 %s）。" % value)
+        raise ValueError("切片慢放倍率必须在 (0, 1.0] 之间（收到 %s）。" % value)
     return value
 
 
-def read_project_playback_speed(project_name: str) -> Optional[float]:
-    """Reads the cut-side playback speed recorded for a same-named project.
-
-    The H3 Long Video Manager writes a ``playback`` block into its project
-    index whenever it saves segments. Same-named projects is the convention
-    that links the two bins; when no such block exists (an old project, or a
-    cut-side project under a different name) this returns None and the caller
-    must not guess a factor.
-    """
-    raw = str(project_name or "").strip()
-    if not raw:
-        return None
-    root = get_output_root()
-    for name in (raw, sanitize_project_name(raw)):
-        index_path = os.path.join(root, LVM_BIN_DIR_NAME, name, LVM_INDEX_NAME)
-        if not os.path.isfile(index_path):
-            continue
-        try:
-            with open(index_path, "r", encoding="utf-8") as stream:
-                index = json.load(stream)
-        except (OSError, ValueError) as exc:
-            logger.warning("[Long Builder] 变速元数据读取失败（%s）：%s", index_path, exc)
-            return None
-        playback = index.get("playback")
-        if not isinstance(playback, dict):
-            return None
-        try:
-            speed = float(playback.get("playback_speed"))
-        except (TypeError, ValueError):
-            return None
-        if not (0 < speed <= 1.0):
-            return None
-        return speed
-    return None
+def output_frame_rate(base_fps, source_speed=1.0) -> float:
+    """Returns the output rate that keeps every rendered frame after retiming."""
+    base = float(base_fps)
+    source = float(source_speed)
+    if not math.isfinite(base) or base <= 0:
+        raise ValueError("基准帧率必须是大于 0 的数字。")
+    if not math.isfinite(source) or source <= 0:
+        raise ValueError("切片慢放倍率必须是大于 0 的数字。")
+    return base / source
 
 
-def resolve_restore_factor(restore_playback_speed: str,
-                           restore_playback_speed_custom: float,
-                           project_playback_speed: Optional[float]) -> Tuple[float, List[str]]:
-    """Decides which factor restores the merged film, metadata first.
-
-    The project's recorded cut speed wins over the widget: that is the whole
-    point of writing it down (a wrong guess at merge time would speed the film
-    by the wrong amount). A mismatch is reported so the user sees which value
-    was used and where it came from.
-    """
-    warnings: List[str] = []
-    user_factor = parse_restore_speed(restore_playback_speed, restore_playback_speed_custom)
-    if project_playback_speed is None:
-        return user_factor, warnings
-    if abs(project_playback_speed - user_factor) > 1e-6:
-        warnings.append(
-            "项目切分元数据记录的慢放倍率是 %.2gx，与手动选择的 %.2gx 不一致；已按元数据 %.2gx 恢复"
-            "（合并结果按约 %.3fx 播放）。如需改用手动倍率，请重新用对应倍率切分该项目的素材。"
-            % (project_playback_speed, user_factor, project_playback_speed,
-               1.0 / project_playback_speed))
-        return project_playback_speed, warnings
-    return user_factor, warnings
-
-
-def apply_speed_restore(path: str, factor: float, fps: float, has_audio: bool) -> None:
-    """Restores the original tempo of the MERGED film, in place.
-
-    Must run after the concat, never per segment: speeding each piece up
-    first would change every clip's length and shift the join seams. The
-    factor is the slow-down used at cut time, so the film plays at 1/factor:
-      video: setpts=factor*PTS compresses the timestamps, then the fps filter
-             resamples the frame clock back to a constant rate - a real speed
-             change, not a container FPS tag;
-      audio: atempo=1/factor matches the tempo and keeps the pitch.
-    Encoding settings mirror the builder's reencode mode (libx264/aac), and the
-    output keeps the same path and file name.
-    """
-    ffmpeg_bin = shutil.which("ffmpeg")
-    if not ffmpeg_bin:
-        raise ValueError("h3_clipstream: 找不到 ffmpeg，无法执行速度还原。请确认 ffmpeg 在 PATH 中。")
-    if not (0 < factor < 1):
-        return
-    rate = 1.0 / factor
-    fd, tmp_path = tempfile.mkstemp(prefix=".restore_", suffix=".mp4",
-                                    dir=os.path.dirname(os.path.abspath(path)))
-    os.close(fd)
-    try:
-        cmd = [ffmpeg_bin, "-y", "-i", path,
-               "-vf", "setpts=%g*PTS,fps=%g" % (factor, fps)]
-        if has_audio:
-            cmd += ["-af", "atempo=%.6f" % rate,
-                    "-c:a", "aac", "-b:a", "192k", "-shortest"]
-        cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", tmp_path]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-        if proc.returncode != 0 or not os.path.isfile(tmp_path) or os.path.getsize(tmp_path) == 0:
-            tail = (proc.stderr or "").strip().splitlines()[-12:]
-            raise ValueError("h3_clipstream: 速度还原失败（退出码 %s）：%s"
-                             % (proc.returncode, " | ".join(tail) or "ffmpeg 没有输出错误信息"))
-        os.replace(tmp_path, path)
-    finally:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+def atempo_filter(speed: float) -> str:
+    """Builds a pitch-preserving tempo chain compatible with older ffmpeg builds."""
+    remaining = float(speed)
+    if remaining <= 0:
+        raise ValueError("音频变速倍率必须大于 0。")
+    stages: List[float] = []
+    while remaining > 2.0:
+        stages.append(2.0)
+        remaining /= 2.0
+    while remaining < 0.5:
+        stages.append(0.5)
+        remaining /= 0.5
+    stages.append(remaining)
+    return ",".join("atempo=%.6f" % stage for stage in stages)
 
 
 def get_output_root() -> str:
@@ -440,6 +345,26 @@ def probe_video_streams(path: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def cached_video_probe(path: str, video_file: str, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return the card's complete probe cache when it still describes this file."""
+    cached = entry.get("video_probe")
+    if not isinstance(cached, dict):
+        return None
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    if (cached.get("file") != str(video_file or "")
+            or cached.get("size") != int(stat.st_size)
+            or cached.get("mtime") != int(stat.st_mtime)):
+        return None
+    keys = ("width", "height", "fps", "frames", "duration", "frames_estimated",
+            "has_audio", "sample_rate", "vcodec", "acodec")
+    if any(key not in cached for key in keys):
+        return None
+    return {key: cached[key] for key in keys}
+
+
 def classify_join(samples: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
     """Decides whether every segment can be stream-copied into one file.
 
@@ -527,7 +452,8 @@ def concat_list_text(paths: List[str]) -> str:
 
 
 def concat_videos(paths: List[str], output_path: str, mode: str,
-                  fps: float = 24.0, has_audio: bool = False) -> Tuple[str, str]:
+                  fps: float = 24.0, has_audio: bool = False,
+                  output_speed: float = 1.0) -> Tuple[str, str]:
     """Runs ffmpeg over the concat list. Returns ("copy"|"reencode", stderr tail)."""
     ffmpeg_bin = shutil.which("ffmpeg")
     if not ffmpeg_bin:
@@ -543,9 +469,17 @@ def concat_videos(paths: List[str], output_path: str, mode: str,
         if mode == JOIN_COPY:
             cmd = base + ["-c", "copy", "-movflags", "+faststart", output_path]
         else:
-            cmd = base + ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", str(fps), "-movflags", "+faststart"]
+            cmd = base + ["-c:v", "libx264", "-pix_fmt", "yuv420p"]
+            if abs(float(output_speed) - 1.0) > 1e-9:
+                cmd += ["-filter:v", "setpts=(PTS-STARTPTS)/%.8f,fps=%s"
+                        % (float(output_speed), fps)]
+            else:
+                cmd += ["-r", str(fps)]
+            cmd += ["-movflags", "+faststart"]
             if has_audio:
                 cmd += ["-c:a", "aac", "-b:a", "192k"]
+                if abs(float(output_speed) - 1.0) > 1e-9:
+                    cmd += ["-filter:a", atempo_filter(output_speed)]
             cmd.append(output_path)
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if proc.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
@@ -567,20 +501,17 @@ def build_long_video(project_name: str,
                      join_mode: str = JOIN_AUTO,
                      fps: float = 24.0,
                      output_name: str = "",
-                     restore_playback_speed: str = "1.0x",
-                     restore_playback_speed_custom: float = 1.0) -> Dict[str, Any]:
+                     playback_speed: str = "1.0x",
+                     playback_speed_custom: float = 1.0) -> Dict[str, Any]:
     """Joins a project's archived videos into one MP4, in the panel's card order.
 
-    ``restore_playback_speed`` says which slow-down factor was used when the
-    reference video was cut (by the H3 Long Video Manager); after the join, the
-    finished film is played back at 1/factor to recover the original tempo. The
-    factor recorded in the cut project's metadata wins over the widget value,
-    so a mis-remembered number cannot distort the film silently.
-
     Returns a dict with path, filename, subfolder, total_frames, duration_seconds,
-    segments, warnings, join_method, restore_factor, restored and a report.
+    segments, warnings, join_method and a human-readable report.
     """
     p_name = (project_name or "Default_Project").strip()
+    source_speed = parse_playback_speed(playback_speed, playback_speed_custom)
+    output_speed = 1.0 / source_speed
+    output_fps = output_frame_rate(fps, source_speed)
     clips = list_bin_clips(p_name)
     chain, warnings = resolve_shot_order(clips, exclude_clips, clip_order)
     if not chain:
@@ -588,17 +519,18 @@ def build_long_video(project_name: str,
     warnings.extend(numbering_gaps(clips))
 
     project_dir = get_project_dir(p_name)
+    clips_by_id = {c.get("clip_id"): c for c in clips}
     segments: List[Dict[str, Any]] = []
     missing: List[str] = []
     for clip_id in chain:
-        meta = next((c for c in clips if c.get("clip_id") == clip_id), {})
+        meta = clips_by_id.get(clip_id, {})
         label = "%s（%s）" % (meta.get("shot_tag") or clip_id, clip_id)
         variant, video_file, variant_meta = pick_variant(meta, variant_policy)
         video_path = os.path.join(project_dir, clip_id, video_file) if video_file else ""
         if not video_path or not os.path.isfile(video_path):
             missing.append("%s [%s]" % (label, variant) if variant else label)
             continue
-        probe = probe_video_streams(video_path)
+        probe = cached_video_probe(video_path, video_file, meta) or probe_video_streams(video_path)
         if probe is None:
             raise ValueError("h3_clipstream: 读不到「%s」的视频参数（%s）。请确认 ffprobe 可用，"
                              "且该文件没有被其他程序占用。" % (label, video_path))
@@ -625,11 +557,14 @@ def build_long_video(project_name: str,
     if join_mode == JOIN_COPY and not can_copy:
         raise ValueError("h3_clipstream: 各段参数不一致，无损直拷会出坏片：" + "；".join(mismatch) +
                          "。请改用 auto 或 reencode。")
+    if join_mode == JOIN_COPY and source_speed < 1.0:
+        raise ValueError("h3_clipstream: 恢复原速必须重编码，copy 无损直拷无法改变播放速度。"
+                         "请改用 auto 或 reencode，或把切片慢放倍率设为 1.0x。")
     if not can_copy:
         warnings.append("各段参数不一致，已改用重编码统一：" + "；".join(mismatch))
 
     mode = JOIN_COPY if can_copy else JOIN_REENCODE
-    if join_mode == JOIN_REENCODE:
+    if join_mode == JOIN_REENCODE or source_speed < 1.0:
         mode = JOIN_REENCODE
 
     slug = re.sub(r"[^0-9A-Za-z_-]+", "_", sanitize_project_name(p_name)) or "project"
@@ -644,34 +579,22 @@ def build_long_video(project_name: str,
 
     join_method, _stderr = concat_videos(
         [segment["video_path"] for segment in segments], out_path, mode,
-        fps=fps, has_audio=any(segment.get("has_audio") for segment in segments))
+        fps=output_fps, has_audio=any(segment.get("has_audio") for segment in segments),
+        output_speed=output_speed)
 
-    # --- Speed restore: strictly AFTER the join, on the finished film ---
-    # The cut project's recorded factor wins over the hand-picked widget (see
-    # resolve_restore_factor); with no metadata the widget is the only source,
-    # and an old project without any speed workflow keeps its exact old result.
-    restore_factor, restore_warnings = resolve_restore_factor(
-        restore_playback_speed, restore_playback_speed_custom,
-        read_project_playback_speed(p_name))
-    warnings.extend(restore_warnings)
-    restored = False
-    if restore_factor < 1.0:
-        restore_fps = float(segments[0].get("fps") or fps or 24.0)
-        apply_speed_restore(out_path, restore_factor, restore_fps,
-                            has_audio=any(segment.get("has_audio") for segment in segments))
-        restored = True
-        logger.info("[Long Builder] restored playback speed %.2gx -> %.3fx playback @ %.6g fps",
-                    restore_factor, 1.0 / restore_factor, restore_fps)
-
-    total_frames = sum(int(segment.get("frames") or 0) for segment in segments)
-    duration = sum(float(segment.get("duration") or 0.0) for segment in segments)
+    source_frames = sum(int(segment.get("frames") or 0) for segment in segments)
+    duration = sum(float(segment.get("duration") or 0.0)
+                   for segment in segments) / output_speed
+    total_frames = (source_frames if join_method == "copy"
+                    else int(round(duration * output_fps)))
     final_probe = probe_video_streams(out_path)
     if final_probe and final_probe.get("frames"):
         total_frames = int(final_probe["frames"])
         duration = float(final_probe.get("duration") or duration)
 
-    report = format_report(p_name, segments, out_path, join_method, total_frames, duration,
-                           warnings, restore_factor=restore_factor, restored=restored)
+    report = format_report(p_name, segments, out_path, join_method, total_frames, duration, warnings,
+                           source_speed=source_speed, output_speed=output_speed,
+                           base_fps=float(fps), output_fps=output_fps)
     logger.info("[Long Builder] '%s' -> '%s' (%d frames, %.2fs, %s)",
                 p_name, out_path, total_frames, duration, join_method)
     return {
@@ -683,16 +606,19 @@ def build_long_video(project_name: str,
         "segments": segments,
         "warnings": warnings,
         "join_method": join_method,
-        "restore_factor": restore_factor,
-        "restored": restored,
+        "playback_speed": source_speed,
+        "output_speed": output_speed,
+        "base_fps": float(fps),
+        "output_fps": output_fps,
         "report": report,
     }
 
 
 def format_report(project_name: str, segments: List[Dict[str, Any]], output_path: str,
                   join_method: str, total_frames: int, duration: float,
-                  warnings: List[str], restore_factor: float = 1.0,
-                  restored: bool = False) -> str:
+                  warnings: List[str], source_speed: float = 1.0,
+                  output_speed: float = 1.0, base_fps: float = 24.0,
+                  output_fps: Optional[float] = None) -> str:
     """Renders the per-segment audit that the node returns as its report output."""
     lines = ["长视频拼接报告 · 项目「%s」" % project_name,
              "镜头顺序（%d 段）：" % len(segments)]
@@ -704,11 +630,13 @@ def format_report(project_name: str, segments: List[Dict[str, Any]], output_path
             segment.get("width"), segment.get("height"), float(segment.get("fps") or 0),
             int(segment.get("frames") or 0), float(segment.get("duration") or 0), audio))
     lines.append("拼接方式：%s" % ("无损直拷（未重编码）" if join_method == "copy" else "重编码统一"))
-    if restored:
-        lines.append("速度还原：按切分倍率 %.2gx 恢复原速（合并结果按约 %.3fx 播放）"
-                     % (restore_factor, 1.0 / restore_factor))
-    else:
-        lines.append("速度还原：未启用（保持合并结果当前速度）")
+    if source_speed < 1.0:
+        lines.append("原速恢复：切片 %.2fx → 成片 %.4fx（音频 atempo 保音调）"
+                     % (source_speed, output_speed))
+        if output_fps is None:
+            output_fps = output_frame_rate(base_fps, source_speed)
+        lines.append("输出帧率：基准 %.3ffps ÷ 切片 %.2fx = %.3ffps（保留渲染帧）"
+                     % (float(base_fps), source_speed, output_fps))
     lines.append("输出：%s  共 %d 帧 / %.2fs" % (output_path, total_frames, duration))
     if warnings:
         lines.append("注意：")

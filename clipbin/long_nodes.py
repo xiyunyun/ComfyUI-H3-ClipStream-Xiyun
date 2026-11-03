@@ -5,10 +5,12 @@ stitching. This node reads the archived videos back in the card order shown on t
 panel and writes one long film, so the user no longer has to line the segments up by
 hand.
 
-It is a read-side node like the Pickers: it never writes into a card, never
-touches a latent, and never re-encodes unless the segments cannot be joined as
-they are. The node itself exposes one VIDEO output, which the front-end panel and
-the inline preview both use; the per-segment audit goes to the ComfyUI log.
+It is a read-side node like the Pickers: it never writes into a card and never
+touches a latent. Matching segments are still stream-copied; re-encoding happens
+only when the segments cannot be joined as they are or the user restores the
+original speed of slowed-down cuts. The node itself exposes one VIDEO output,
+which the front-end panel and the inline preview both use; the per-segment audit
+goes to the ComfyUI log.
 """
 
 from comfy_api.latest import io, InputImpl, ui
@@ -19,7 +21,7 @@ from .long_builder import (
     build_long_video,
     JOIN_AUTO,
     JOIN_MODES,
-    RESTORE_SPEED_OPTIONS,
+    PLAYBACK_SPEED_OPTIONS,
     VARIANT_PREFER_UP,
     VARIANT_POLICIES,
 )
@@ -58,20 +60,15 @@ class MiniMaxClipBinLongBuilderNode(io.ComfyNode):
                 io.Combo.Input('join_mode', options=list(JOIN_MODES), advanced=True, default=JOIN_AUTO,
                                tooltip='【拼接方式】\n• auto：分辨率/帧率/音频参数一致时无损直拷（最快、不损画质），不一致时自动重编码统一。\n• copy：只允许无损直拷，参数不一致直接报错，适合确认过参数一致的项目。\n• reencode：一律重编码，用来把不同分辨率的历史片段强行接在一起。'),
                 io.Float.Input('fps', optional=True, advanced=True, default=24.0, min=1.0, max=240.0, step=0.001,
-                               tooltip='【重编码帧率】只在需要重编码时使用，应与生成时的帧率一致（默认 24）。'),
+                               tooltip='【基准帧率】填写切片生成时的帧率（默认 24）。普通重编码按此值输出；恢复原速时自动除以慢放倍率，例如 24fps + 0.5x → 48fps、24fps + 0.75x → 32fps，避免恢复时丢帧。'),
                 io.String.Input('output_name', optional=True, advanced=True, default='',
                                 tooltip='【输出文件名】可选，留空则用 项目名_段数_时间戳.mp4。输出在 output/h3_long/<项目>/ 下，不会进入卡片库。'),
-                # Appended last on purpose: widget values are restored by
-                # position, so a workflow saved before this pair keeps every
-                # older value and keeps joining exactly as it did.
-                io.Combo.Input('restore_playback_speed', advanced=True, default='1.0x',
-                               display_name='恢复原速倍率',
-                               options=list(RESTORE_SPEED_OPTIONS),
-                               tooltip='【恢复原速倍率】填当初在 H3 Long Video Manager 里切分参考视频时使用的慢放倍率，拼接完成后整片按 1/倍率 加速回原速（如 0.5x → 约 2 倍播放）。只对拼接完成的成片整体执行，不逐段加速。同名切分项目记录了倍率时会以元数据为准，手动选择不一致会提示。1.0x = 不恢复。'),
-                io.Float.Input('restore_playback_speed_custom', optional=True, advanced=True, default=1.0,
-                               display_name='自定义恢复倍率',
+                io.Combo.Input('playback_speed', options=list(PLAYBACK_SPEED_OPTIONS), optional=True,
+                               advanced=True, default='1.0x',
+                               tooltip='【切片慢放倍率】如果切片在 Manager / Smart Split 中经过慢放，在这里选择相同倍率即可恢复原速：0.5x → 2x，0.75x → 约 1.3333x。1.0x 不恢复，保持原有拼接行为。'),
+                io.Float.Input('playback_speed_custom', optional=True, advanced=True, default=1.0,
                                min=0.1, max=1.0, step=0.1,
-                               tooltip='【自定义恢复倍率】只在恢复倍率选 custom 时生效：填当初切分用的慢放倍率（0~1.0 的一位小数，如 0.6），不是要再次执行的慢放。'),
+                               tooltip='【自定义切片慢放倍率】只在上一项选择 custom 时生效，范围 0.1–1.0。Builder 自动按倒数恢复成片速度，音频同步 atempo 保音调。'),
             ],
             outputs=[
                 io.Video.Output('video', tooltip='拼好的长视频：可直接接 SaveVideo / VHS_VideoCombine，节点自身也会内联预览。'),
@@ -87,8 +84,8 @@ class MiniMaxClipBinLongBuilderNode(io.ComfyNode):
                join_mode: str = JOIN_AUTO,
                fps: float = 24.0,
                output_name: str = "",
-               restore_playback_speed: str = "1.0x",
-               restore_playback_speed_custom: float = 1.0,
+               playback_speed: str = "1.0x",
+               playback_speed_custom: float = 1.0,
                **kwargs) -> io.NodeOutput:
         result = build_long_video(
             project_name=project_name,
@@ -98,8 +95,8 @@ class MiniMaxClipBinLongBuilderNode(io.ComfyNode):
             join_mode=join_mode,
             fps=fps,
             output_name=output_name,
-            restore_playback_speed=restore_playback_speed,
-            restore_playback_speed_custom=restore_playback_speed_custom,
+            playback_speed=playback_speed,
+            playback_speed_custom=playback_speed_custom,
         )
         for warning in result["warnings"]:
             logger.warning("[Long Builder] %s", warning)
