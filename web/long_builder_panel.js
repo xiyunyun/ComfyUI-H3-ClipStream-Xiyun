@@ -12,6 +12,7 @@
 // - the finished film on the node, which can be put away while the cards are arranged
 import { addPanel } from "./dom_panel.js";
 import { moveCard, resolveDeckOrder, shotNumber } from "./long_builder_order.js";
+import { createProjectMenu } from "./project_menu.js";
 import {
     DECK_PAD_V,
     ZOOM_STEPS,
@@ -125,10 +126,7 @@ function setupLongBuilderPanel(node) {
     const title = document.createElement("span");
     title.className = "minimax-clip-bin-title h3-lb-title";
     title.textContent = "🎬 长视频拼接";
-    const projectSelect = document.createElement("select");
-    projectSelect.className = "minimax-clip-bin-project";
-    projectSelect.title = "选择包含视频文件的项目文件夹";
-    // Card size lives next to the project picker because it changes what the deck shows.
+    // Card size lives next to the title because it changes what the deck shows.
     const actionsWrap = document.createElement("div");
     actionsWrap.className = "minimax-clip-bin-actions";
     const zoomOutBtn = document.createElement("button");
@@ -155,7 +153,6 @@ function setupLongBuilderPanel(node) {
     actionsWrap.appendChild(fitBtn);
     actionsWrap.appendChild(refreshBtn);
     header.appendChild(title);
-    header.appendChild(projectSelect);
     header.appendChild(actionsWrap);
     container.appendChild(header);
 
@@ -198,6 +195,11 @@ function setupLongBuilderPanel(node) {
     container.appendChild(footer);
 
     const { signal } = addPanel(node, "h3_long_builder", container, PANEL_MIN_HEIGHT);
+
+    // The same card menu as the Pickers, limited to bins that hold an archived video
+    // because a bin without one can never become a film.
+    const projectMenu = createProjectMenu({ node, widget: projectWidget, signal, mode: "builder" });
+    container.insertBefore(projectMenu.element, container.firstChild);
     const previewCleanups = new Set();
     const releasePreviews = () => {
         for (const cleanup of previewCleanups) cleanup();
@@ -463,34 +465,6 @@ function setupLongBuilderPanel(node) {
         node.setDirtyCanvas?.(true, true);
     }
 
-    async function loadProjects() {
-        let names = [];
-        try {
-            const res = await api.fetchApi("/minimax/clip_bin/projects?videos_only=1", { cache: "no-store" });
-            if (res.ok) {
-                const data = await res.json();
-                names = (data.projects || []).map(item => ({
-                    name: item.name, clips: item.clips || 0, videos: item.videos || 0,
-                }));
-            }
-        } catch (e) {
-            console.warn("[Long Builder] projects lookup failed:", e);
-        }
-        if (signal.aborted) return;
-        const active = currentProject();
-        if (!names.some(item => item.name === active)) {
-            names.unshift({ name: active, clips: 0, videos: 0 });
-        }
-        projectSelect.innerHTML = "";
-        for (const item of names) {
-            const option = document.createElement("option");
-            option.value = item.name;
-            option.textContent = item.videos ? `${item.name} (${item.videos} 段视频)` : item.name;
-            if (item.name === active) option.selected = true;
-            projectSelect.appendChild(option);
-        }
-    }
-
     function describe(joined, cards, offSet) {
         const names = joined.map(card => card.shot_tag || card.clip_id);
         const shown = names.length <= 8 ? names.join(" → ") : names.slice(0, 8).join(" → ") + " …";
@@ -549,7 +523,7 @@ function setupLongBuilderPanel(node) {
     let requestId = 0;
     async function loadCards() {
         const currentRequest = ++requestId;
-        await loadProjects();
+        await projectMenu.refresh();
         if (signal.aborted || currentRequest !== requestId) return;
         const project = currentProject();
         // Ask for the variant this node would join, so the numbers on a card are the
@@ -765,14 +739,6 @@ function setupLongBuilderPanel(node) {
         }
     }
 
-    projectSelect.onchange = () => {
-        if (projectWidget) {
-            projectWidget.value = projectSelect.value;
-            projectWidget.callback?.(projectWidget.value);
-        }
-        node.setDirtyCanvas?.(true, true);
-        loadCards();
-    };
     refreshBtn.onclick = (e) => {
         e.stopPropagation();
         loadCards();

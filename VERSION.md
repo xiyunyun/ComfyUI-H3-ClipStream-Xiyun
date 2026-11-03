@@ -3,6 +3,16 @@
 > 版本铁规：每次改动前，把旧版本完整快照存入 `archive/<日期>-<commit 短 hash>/`，并在本文件顶部追加一条说明。
 > 只有用户的明确命令才能删改 `archive/` 中的旧版本。
 
+## 2026-11-03 · 项目素材库卡片菜单移植到 ClipStream（待实机验收）
+
+- 快照：改动前已提交状态 `fcc3b2a` 存入 `archive/2026-11-03-fcc3b2a/`（54 个文件）。工作区里原有的 `motion_context` `frames_cap` 改动不属于本轮，未纳入快照。
+- `MiniMax H3 Dual Clip Picker`、`MiniMax H3 Clip Bin Picker`、`MiniMax H3 Clip Long Builder` 的原生项目下拉框换成与 H3-LVM 相同的卡片菜单：当前项目卡（封面、数量、最后修改时间）、固定弹层网格（搜索、按名称/修改时间排序、正/倒序、3–6 列、新建、重命名、删除）。
+- 后端 `GET /minimax/clip_bin/projects` 增加 `updated_at`（取自项目索引 `last_updated`）与 `cover_url`（第一张带 `preview.png` / 尾帧 / 首帧的卡片，复用 `/view` 预览路由）。Long Builder 仍传 `videos_only=1`，只列含归档视频的项目。
+- 新增 `POST /minimax/clip_bin/project/rename`：整体移动项目文件夹并改写索引 `project_name` 与 `last_updated`；目标名已存在时先拒绝；索引写入失败回滚目录；沿用同源校验与中文错误提示。
+- 选择项目仍只写 `project_name` 控件，不新增节点参数、不改序列化位置，旧工作流不受影响；Dual Picker 与普通 Picker 共用 `clip_bin_picker.js`，一处改动同时生效。
+- 卡片缩放（100%–400%）与 Long Builder 的 fit 高度计算未改动。
+- 验证：`python -m unittest discover -s tests` → **227 通过，跳过 1**（含新增列表封面/更新时间 2 条、重命名 8 条）；`tests/js/long_builder_fit.test.mjs` 16 条、`long_builder_order.test.mjs` 9 条通过；H3-LVM 回归 **697/697 通过**（该插件未改动）；改动 JS 全部通过 `node --check`。浏览器实机视觉与重命名/删除操作待用户验收。
+
 ## 2026-10-27 · 与原版二选一共存守卫与目录改名（已提交并推送 main）
 
 - 本仓库本地目录已由 `ComfyUI-H3-ClipStream` 改名为 `ComfyUI-H3-ClipStream-Xiyun`，与 GitHub fork 仓库名一致；只改文件夹名，不改节点 ID、路由或工作流数据。
