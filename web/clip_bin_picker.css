@@ -959,6 +959,7 @@
 }
 
 .minimax-project-search-row {
+    --project-control-h: clamp(30px, 2vw, 40px);
     flex: 0 0 auto;
     display: flex;
     align-items: center;
@@ -967,18 +968,24 @@
     padding: clamp(8px, .6vw, 13px) clamp(10px, .8vw, 16px) 5px;
 }
 
+/* One box model for every toolbar control, so the row lines up to the pixel. */
+.minimax-project-search-row > *,
+.minimax-project-create > * {
+    box-sizing: border-box;
+}
+
 /* The one control that starts a new bin: primary colour, first in the row, and it
    never shrinks. A narrow window wraps the search field under it instead of
    squeezing the label onto two characters. */
 .minimax-project-new-btn {
     flex: 0 0 auto;
-    min-height: clamp(26px, 1.6vw, 34px);
-    padding: clamp(5px, .45vw, 8px) clamp(12px, 1vw, 18px);
+    height: var(--project-control-h);
+    padding: 0 clamp(12px, 1vw, 18px);
     color: #ffffff;
     background: #1d4ed8;
     border: 1px solid #3b82f6;
     border-radius: 6px;
-    font-size: clamp(12px, .72vw, 15px);
+    font-size: clamp(14px, .8vw, 17px);
     font-weight: 700;
     white-space: nowrap;
     cursor: pointer;
@@ -995,39 +1002,126 @@
     outline-offset: 2px;
 }
 
-.minimax-project-search {
-    flex: 1 1 160px;
-    min-width: 0;
-    padding: 4px 7px;
+/* The name field and its two buttons are always in the toolbar row, right after the
+   button that focuses them. The buttons stay dim until the field holds a name.
+   display:contents keeps the three controls in the row's own flex flow, so the name
+   field and the search field can share the leftover width evenly. */
+.minimax-project-create {
+    display: contents;
+}
+
+.minimax-project-name {
+    flex: 1 1 0;
+    min-width: clamp(150px, 10vw, 200px);
+    height: calc(var(--project-control-h) * .95);
+    padding: 0 8px;
     color: #e2e8f0;
     background: #0f172a;
     border: 1px solid #475569;
     border-radius: 5px;
-    font-size: clamp(11px, .7vw, 14px);
+    font-size: clamp(13px, .72vw, 16px);
+    user-select: text;
+}
+
+.minimax-project-name:focus {
+    outline: none;
+    border-color: #60a5fa;
+}
+
+.minimax-project-create-btn,
+.minimax-project-cancel-btn {
+    flex: 0 0 auto;
+    height: calc(var(--project-control-h) * .95);
+    padding: 0 clamp(10px, .8vw, 14px);
+    border-radius: 5px;
+    font-size: clamp(13px, .72vw, 16px);
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background .2s ease, border-color .2s ease;
+}
+
+.minimax-project-create-btn {
+    color: #ffffff;
+    background: #15803d;
+    border: 1px solid #22c55e;
+}
+
+.minimax-project-create-btn:hover {
+    background: #16a34a;
+    border-color: #4ade80;
+}
+
+/* Until the field holds a name there is nothing to confirm or cancel, so both
+   buttons read as unavailable instead of looking like live actions. */
+.minimax-project-create-btn:disabled,
+.minimax-project-cancel-btn:disabled {
+    color: #64748b;
+    background: #1e293b;
+    border-color: #334155;
+    opacity: .75;
+    cursor: default;
+}
+
+.minimax-project-cancel-btn {
+    color: #cbd5e1;
+    background: #1e293b;
+    border: 1px solid #475569;
+}
+
+.minimax-project-cancel-btn:hover {
+    color: #ffffff;
+    background: #334155;
+    border-color: #60a5fa;
+}
+
+/* A failure message stays in the row; it truncates instead of pushing the controls. */
+.minimax-project-error {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: clamp(120px, 12vw, 220px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #fca5a5;
+    font-size: clamp(11px, .62vw, 13px);
+}
+
+.minimax-project-search {
+    flex: 1 1 0;
+    min-width: clamp(150px, 10vw, 200px);
+    height: calc(var(--project-control-h) * .95);
+    padding: 0 8px;
+    color: #e2e8f0;
+    background: #0f172a;
+    border: 1px solid #475569;
+    border-radius: 5px;
+    font-size: clamp(13px, .72vw, 16px);
     user-select: text;
 }
 
 .minimax-project-sort,
 .minimax-project-columns {
     flex: 0 0 auto;
-    min-width: 96px;
-    padding: 3px 5px;
+    min-width: clamp(96px, 8vw, 118px);
+    height: calc(var(--project-control-h) * .95);
+    padding: 0 6px;
     color: #e2e8f0;
     background: #0f172a;
     border: 1px solid #475569;
     border-radius: 5px;
-    font-size: clamp(10px, .62vw, 13px);
+    font-size: clamp(12px, .68vw, 15px);
     cursor: pointer;
 }
 
 .minimax-project-columns {
-    min-width: 62px;
+    min-width: clamp(64px, 5vw, 78px);
 }
 
 .minimax-project-sort-dir {
     flex: 0 0 auto;
-    width: clamp(24px, 1.4vw, 32px);
-    height: clamp(24px, 1.4vw, 32px);
+    width: var(--project-control-h);
+    height: var(--project-control-h);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1037,7 +1131,7 @@
     border: 1px solid #475569;
     border-radius: 5px;
     cursor: pointer;
-    font-size: clamp(11px, .7vw, 14px);
+    font-size: clamp(13px, .72vw, 16px);
 }
 
 .minimax-project-search:focus,

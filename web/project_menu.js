@@ -157,25 +157,28 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         option.textContent = `${count} 列`;
         columnsSelect.appendChild(option);
     }
-    // The only way into the menu: it is the first control in the row, because a
-    // button at the far right was too easy to miss.
+    // The button no longer opens or hides anything: it puts the cursor into the
+    // always-visible name field, so typing can also start with a click on the field.
     const newBtn = makeElement("button", "minimax-project-new-btn", "＋ 新建项目");
     newBtn.type = "button";
-    newBtn.title = "新建一个项目库";
-    searchRow.append(newBtn, searchInput, sortSelect, sortDirBtn, columnsSelect);
+    newBtn.title = "把光标放进项目名称框";
 
-    const createRow = makeElement("div", "minimax-clip-bin-new");
-    createRow.hidden = true;
+    // The name field and its buttons are always on screen: no second line, no
+    // toggling. The two buttons stay disabled until the field holds something, so
+    // the row reads as "type a name, then confirm".
+    const createGroup = makeElement("div", "minimax-project-create");
     const nameInput = document.createElement("input");
     nameInput.type = "text";
-    nameInput.className = "minimax-clip-bin-new-input";
+    nameInput.className = "minimax-project-name";
     nameInput.placeholder = config.placeholder;
-    const createBtn = makeElement("button", "minimax-clip-bin-refresh-btn", "✔ 建立");
+    const createBtn = makeElement("button", "minimax-project-create-btn", "✔ 建立");
     createBtn.type = "button";
-    const cancelCreateBtn = makeElement("button", "minimax-clip-bin-refresh-btn", "✕ 取消");
+    const cancelCreateBtn = makeElement("button", "minimax-project-cancel-btn", "✕ 取消");
     cancelCreateBtn.type = "button";
-    const createError = makeElement("span", "minimax-clip-bin-new-error");
-    createRow.append(nameInput, createBtn, cancelCreateBtn, createError);
+    const createError = makeElement("span", "minimax-project-error");
+    createGroup.append(nameInput, createBtn, cancelCreateBtn, createError);
+
+    searchRow.append(newBtn, createGroup, searchInput, sortSelect, sortDirBtn, columnsSelect);
 
     const deleteRow = makeElement("div", "minimax-clip-bin-new minimax-clip-bin-danger");
     deleteRow.hidden = true;
@@ -190,7 +193,7 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
     const grid = makeElement("div", "minimax-project-grid");
     const modalHint = makeElement("span", "minimax-project-modal-hint");
     modalHint.textContent = "点卡片切换项目 · ✎ 重命名会移动整个文件夹 · 🗑 删除会清空整个库。";
-    modal.append(head, searchRow, createRow, deleteRow, grid, modalHint);
+    modal.append(head, searchRow, deleteRow, grid, modalHint);
     overlay.appendChild(modal);
 
     document.body.appendChild(overlay);
@@ -435,10 +438,24 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         }
     }
 
-    function closeCreateRow() {
-        createRow.hidden = true;
+    function resetCreateInput() {
         nameInput.value = "";
-        createError.textContent = "";
+        showCreateError("");
+        syncCreateButtons();
+        nameInput.blur();
+    }
+
+    // Nothing can be confirmed until a real name is in the field; whitespace alone
+    // does not count, which matches what the backend accepts.
+    function syncCreateButtons() {
+        const ready = nameInput.value.trim().length > 0;
+        createBtn.disabled = !ready;
+        cancelCreateBtn.disabled = !ready;
+    }
+
+    function showCreateError(message) {
+        createError.textContent = message;
+        createError.title = message;
     }
 
     function closeDeleteRow() {
@@ -453,7 +470,7 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         modalOpen = true;
         overlay.hidden = false;
         searchInput.value = search;
-        closeCreateRow();
+        resetCreateInput();
         closeDeleteRow();
         editingName = "";
         renderGrid();
@@ -465,7 +482,7 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         overlay.hidden = true;
         editingName = "";
         pendingDelete = "";
-        closeCreateRow();
+        resetCreateInput();
         closeDeleteRow();
         if (openMenuClose === closeModal) openMenuClose = null;
     }
@@ -521,13 +538,13 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         event.preventDefault();
         event.stopPropagation();
         closeDeleteRow();
-        createRow.hidden = !createRow.hidden;
-        if (!createRow.hidden) nameInput.focus();
+        nameInput.focus();
+        nameInput.select();
     };
     cancelCreateBtn.onclick = (event) => {
         event.preventDefault();
         event.stopPropagation();
-        closeCreateRow();
+        resetCreateInput();
     };
     // Enter in the name field does call createProject; the button has to do the same,
     // otherwise the form only works for keyboard users.
@@ -536,18 +553,19 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         event.stopPropagation();
         void createProject();
     };
+    nameInput.oninput = syncCreateButtons;
     nameInput.onkeydown = (event) => {
         event.stopPropagation();
         if (event.key === "Enter") {
             event.preventDefault();
             void createProject();
         }
-        if (event.key === "Escape") closeCreateRow();
+        if (event.key === "Escape") resetCreateInput();
     };
 
     function showDeleteConfirm(bin) {
         pendingDelete = bin.name;
-        closeCreateRow();
+        resetCreateInput();
         deleteText.textContent = deleteWarning(bin.name, bin);
         deleteBtn.textContent = `✔ 删除「${bin.name}」`;
         deleteError.textContent = "";
@@ -592,7 +610,7 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
     }
 
     async function setProject(name, closeAfter = false) {
-        closeCreateRow();
+        resetCreateInput();
         closeDeleteRow();
         editingName = "";
         if (widget) {
@@ -616,12 +634,13 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
     async function createProject() {
         const typed = nameInput.value.trim();
         if (!typed) {
-            createError.textContent = "先写个名字。";
+            showCreateError("先写个名字。");
             nameInput.focus();
             return;
         }
         createBtn.disabled = true;
-        createError.textContent = "";
+        cancelCreateBtn.disabled = true;
+        showCreateError("");
         try {
             const res = await api.fetchApi("/minimax/clip_bin/project", {
                 method: "POST",
@@ -630,15 +649,15 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                createError.textContent = data.error || `建立失败（HTTP ${res.status}）`;
+                showCreateError(data.error || `建立失败（HTTP ${res.status}）`);
                 return;
             }
             await setProject(data.name || typed, true);
         } catch (error) {
             console.warn("[Clip Bin] create project failed:", error);
-            createError.textContent = "建立失败：连不上后台服务。";
+            showCreateError("建立失败：连不上后台服务。");
         } finally {
-            createBtn.disabled = false;
+            syncCreateButtons();
         }
     }
 
@@ -721,6 +740,7 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
 
     syncSortUi();
     applyColumns();
+    syncCreateButtons();
     paintCurrent();
     void refresh();
 
