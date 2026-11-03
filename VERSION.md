@@ -3,6 +3,14 @@
 > 版本铁规：每次改动前，把旧版本完整快照存入 `archive/<日期>-<commit 短 hash>/`，并在本文件顶部追加一条说明。
 > 只有用户的明确命令才能删改 `archive/` 中的旧版本。
 
+## 2026-11-03 · 修复项目菜单「✔ 建立」点击无效，新建按钮左移放大
+
+- 缺陷：上游 `ba4ed38` 重写 `web/project_menu.js` 时只保留了名称输入框的回车提交，漏掉 `createBtn.onclick`。「＋ 新建项目」展开后点「✔ 建立」没有反应，只能按回车。
+- 修复：给 `createBtn` 补上与回车相同的点击处理（`createProject()`），两种提交方式行为一致。
+- 新建按钮从工具栏最右侧移到最左侧，改为主色大按钮 `minimax-project-new-btn`：字号/内边距用 `clamp()`，`flex: 0 0 auto` + `white-space: nowrap`，永不收缩；窗口变窄时搜索框换到下一行，不会挤压按钮文字。
+- Dual Picker、普通 Picker 与 Long Builder 共用同一份 `project_menu.js`，一处修复覆盖三个节点的弹层。
+- 验证：`node --check` 全部通过；Python **223/223 通过（1 项既有权限跳过）**（无后端改动）。实际点击建库由用户在 ComfyUI 中复测。
+
 ## 2026-11-03 · 项目菜单卡顿第一轮优化（已验收）
 
 - 快照：`archive/2026-11-03-6eb3344-xiyun-merge-pre-menu-perf/` 保存本轮前完整融合工作树（55 个源码、文档和测试文件）。

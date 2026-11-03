@@ -157,9 +157,12 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         option.textContent = `${count} 列`;
         columnsSelect.appendChild(option);
     }
-    const newBtn = makeElement("button", "minimax-clip-bin-refresh-btn", "＋ 新建项目");
+    // The only way into the menu: it is the first control in the row, because a
+    // button at the far right was too easy to miss.
+    const newBtn = makeElement("button", "minimax-project-new-btn", "＋ 新建项目");
     newBtn.type = "button";
-    searchRow.append(searchInput, sortSelect, sortDirBtn, columnsSelect, newBtn);
+    newBtn.title = "新建一个项目库";
+    searchRow.append(newBtn, searchInput, sortSelect, sortDirBtn, columnsSelect);
 
     const createRow = makeElement("div", "minimax-clip-bin-new");
     createRow.hidden = true;
@@ -525,6 +528,13 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         event.preventDefault();
         event.stopPropagation();
         closeCreateRow();
+    };
+    // Enter in the name field does call createProject; the button has to do the same,
+    // otherwise the form only works for keyboard users.
+    createBtn.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void createProject();
     };
     nameInput.onkeydown = (event) => {
         event.stopPropagation();

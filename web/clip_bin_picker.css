@@ -967,6 +967,34 @@
     padding: clamp(8px, .6vw, 13px) clamp(10px, .8vw, 16px) 5px;
 }
 
+/* The one control that starts a new bin: primary colour, first in the row, and it
+   never shrinks. A narrow window wraps the search field under it instead of
+   squeezing the label onto two characters. */
+.minimax-project-new-btn {
+    flex: 0 0 auto;
+    min-height: clamp(26px, 1.6vw, 34px);
+    padding: clamp(5px, .45vw, 8px) clamp(12px, 1vw, 18px);
+    color: #ffffff;
+    background: #1d4ed8;
+    border: 1px solid #3b82f6;
+    border-radius: 6px;
+    font-size: clamp(12px, .72vw, 15px);
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background .2s ease, border-color .2s ease;
+}
+
+.minimax-project-new-btn:hover {
+    background: #2563eb;
+    border-color: #93c5fd;
+}
+
+.minimax-project-new-btn:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
 .minimax-project-search {
     flex: 1 1 160px;
     min-width: 0;
