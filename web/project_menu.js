@@ -180,20 +180,28 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
 
     searchRow.append(newBtn, createGroup, searchInput, sortSelect, sortDirBtn, columnsSelect);
 
-    const deleteRow = makeElement("div", "minimax-clip-bin-new minimax-clip-bin-danger");
+    // Deleting a bin is confirmed in a centered card over the grid, not in a row
+    // above it: the sentence names what the delete removes, the two buttons sit
+    // together, and the destructive click is a deliberate one.
+    const deleteRow = makeElement("div", "minimax-project-confirm");
     deleteRow.hidden = true;
-    const deleteText = makeElement("span", "minimax-clip-bin-danger-text");
+    const confirmCard = makeElement("div", "minimax-project-confirm-card");
+    const confirmTitle = makeElement("span", "minimax-project-confirm-title");
+    const deleteText = makeElement("span", "minimax-project-confirm-text");
     const deleteBtn = makeElement("button", "minimax-clip-bin-danger-btn");
     deleteBtn.type = "button";
     const cancelDeleteBtn = makeElement("button", "minimax-clip-bin-refresh-btn", "✕ 取消");
     cancelDeleteBtn.type = "button";
     const deleteError = makeElement("span", "minimax-clip-bin-new-error");
-    deleteRow.append(deleteText, deleteBtn, cancelDeleteBtn, deleteError);
+    const confirmActions = makeElement("div", "minimax-project-confirm-actions");
+    confirmActions.append(cancelDeleteBtn, deleteBtn);
+    confirmCard.append(confirmTitle, deleteText, confirmActions, deleteError);
+    deleteRow.appendChild(confirmCard);
 
     const grid = makeElement("div", "minimax-project-grid");
     const modalHint = makeElement("span", "minimax-project-modal-hint");
     modalHint.textContent = "点卡片切换项目 · ✎ 重命名会移动整个文件夹 · 🗑 删除会清空整个库。";
-    modal.append(head, searchRow, deleteRow, grid, modalHint);
+    modal.append(head, searchRow, grid, modalHint, deleteRow);
     overlay.appendChild(modal);
 
     document.body.appendChild(overlay);
@@ -502,10 +510,15 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         if (event.target === overlay) closeModal();
     };
     document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && modalOpen) {
-            event.stopPropagation();
-            closeModal();
+        if (event.key !== "Escape" || !modalOpen) return;
+        event.stopPropagation();
+        // Escape backs out of the confirmation first, so a half-pressed delete
+        // cannot take the whole menu (and the clicked project) with it.
+        if (!deleteRow.hidden) {
+            closeDeleteRow();
+            return;
         }
+        closeModal();
     }, { signal });
 
     searchInput.oninput = () => {
@@ -566,10 +579,12 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
     function showDeleteConfirm(bin) {
         pendingDelete = bin.name;
         resetCreateInput();
+        confirmTitle.textContent = `删除项目「${bin.name}」`;
         deleteText.textContent = deleteWarning(bin.name, bin);
         deleteBtn.textContent = `✔ 删除「${bin.name}」`;
         deleteError.textContent = "";
         deleteRow.hidden = false;
+        cancelDeleteBtn.focus();
     }
 
     cancelDeleteBtn.onclick = (event) => {
