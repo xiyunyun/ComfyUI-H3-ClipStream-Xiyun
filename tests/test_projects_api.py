@@ -369,5 +369,21 @@ class TestCardVideoProbe(BinFixture):
         self.assertNotIn("video_duration_seconds", card)
         self.assertNotIn("video_probe", self.meta("Proj", "clip_a"))
 
+
+class TestProjectFolderPath(BinFixture):
+    """Where the panel's "打开本地目录" button points for the current bin."""
+
+    def test_an_existing_project_resolves_without_creating(self):
+        os.makedirs(os.path.join(self.store, "Movie"), exist_ok=True)
+        self.assertEqual(cbm.existing_project_dir("Movie"),
+                         os.path.join(self.store, "Movie"))
+
+    def test_a_missing_project_is_refused_and_not_created(self):
+        missing = os.path.join(self.store, "Never")
+        with self.assertRaises(FileNotFoundError):
+            cbm.existing_project_dir("Never")
+        self.assertFalse(os.path.exists(missing), "opening a folder must not create a bin")
+
+
 if __name__ == "__main__":
     unittest.main()
