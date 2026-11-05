@@ -1,7 +1,6 @@
 """HTTP API endpoints for MiniMax H3 Clip Bin web frontend integration."""
 
 import os
-import platform
 import asyncio
 from .asset_paths import preview_url
 import json
@@ -43,11 +42,7 @@ from .long_builder import (
 )
 
 
-def _open_local_folder(path: str) -> None:
-    """Reveal one folder in the host's file manager; only the path is used."""
-    if platform.system() != "Windows":
-        raise RuntimeError("打开本地目录目前仅支持 Windows。")
-    os.startfile(os.path.realpath(path))
+from .local_folder import open_local_folder
 
 
 def _probe_and_fix_durations(project_name: str, clip_id: str, entry: Dict[str, Any], clip_dir: str) -> bool:
@@ -488,7 +483,7 @@ def register_clip_bin_routes() -> None:
             if not isinstance(body, dict):
                 raise ValueError("Expected an object")
             folder = await asyncio.to_thread(existing_project_dir, body.get("project"))
-            await asyncio.to_thread(_open_local_folder, folder)
+            await asyncio.to_thread(open_local_folder, folder)
         except FileNotFoundError as exc:
             return web.json_response({"error": str(exc)}, status=404)
         except ValueError as exc:

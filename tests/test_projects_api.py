@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _support
@@ -383,6 +384,46 @@ class TestProjectFolderPath(BinFixture):
         with self.assertRaises(FileNotFoundError):
             cbm.existing_project_dir("Never")
         self.assertFalse(os.path.exists(missing), "opening a folder must not create a bin")
+
+
+class TestLocalFolderRaisesExplorer(BinFixture):
+    """The opened folder has to reach the front, not just the taskbar.
+
+    Explorer is started by a background process (the ComfyUI server), so Windows'
+    foreground lock leaves the new window behind the browser. The module finds the
+    window the shell just made and raises it; these tests drive that lookup and the
+    raise without opening anything.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.folder = _support.load_clipbin_module("local_folder")
+
+    def test_it_raises_the_new_explorer_window(self):
+        raised = mock.MagicMock()
+        windows = [(1, "Documents"), (2, "h3-clipstream"), (3, "Movie")]
+        with mock.patch.object(self.folder, "os") as patched_os, \
+                mock.patch.object(self.folder.platform, "system", return_value="Windows"), \
+                mock.patch.object(self.folder, "_explorer_windows", side_effect=[windows, windows]), \
+                mock.patch.object(self.folder, "_raise_explorer", raised):
+            patched_os.path.realpath.side_effect = os.path.realpath
+            self.folder.open_local_folder(os.path.join(self.store, "Movie"))
+        patched_os.startfile.assert_called_once()
+        raised.assert_called_once()
+        self.assertEqual(raised.call_args.args[1], {1, 2, 3},
+                         "only the windows already open are excluded from the lookup")
+
+    def test_a_new_window_wins_over_a_reused_title_match(self):
+        with mock.patch.object(self.folder, "_explorer_windows",
+                               side_effect=[[(1, "Movie")], [(1, "Movie"), (2, "Other")]]):
+            with mock.patch("ctypes.windll", mock.MagicMock(), create=True):
+                # The raise path needs a real user32; only the lookup is under test here.
+                self.assertTrue(self.folder._raise_explorer(
+                    os.path.join(self.store, "Movie"), {1}, timeout=0.5))
+
+    def test_no_window_appearing_is_not_an_error(self):
+        with mock.patch.object(self.folder, "_explorer_windows", return_value=[]):
+            self.assertFalse(self.folder._raise_explorer(self.store, set(), timeout=0.2))
 
 
 if __name__ == "__main__":
