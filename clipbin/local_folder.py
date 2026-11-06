@@ -1,12 +1,4 @@
-"""Reveal a project folder on the Windows host that runs ComfyUI.
-
-The request comes from a browser tab, so the ComfyUI server is not the foreground
-process when it hands the folder to Explorer. Windows' foreground lock therefore lets
-the new Explorer window open behind the browser. The folder itself is opened by the
-shell; this module only finds that window and raises it, using the documented Alt-key
-release for SetForegroundWindow. Failure to raise is not an error - the folder is open
-and the user can click its taskbar entry.
-"""
+"""Open a project folder on the Windows host running ComfyUI."""
 from __future__ import annotations
 
 import logging
@@ -18,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def _explorer_windows():
-    """Every visible Explorer folder window as (handle, title)."""
+    """Return visible Explorer folder windows as (handle, title)."""
     import ctypes
     from ctypes import wintypes
 
@@ -65,21 +57,20 @@ def _raise_explorer(folder: str, previous, timeout: float = 2.0) -> bool:
     user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
     user32.BringWindowToTop.argtypes = [wintypes.HWND]
     user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    user32.ShowWindow(hwnd, 9)
     user32.BringWindowToTop(hwnd)
     if user32.SetForegroundWindow(hwnd):
         return True
-    user32.keybd_event(0x12, 0, 0, 0)  # VK_MENU down
-    user32.keybd_event(0x12, 0, 0x0002, 0)  # VK_MENU up
+    user32.keybd_event(0x12, 0, 0, 0)
+    user32.keybd_event(0x12, 0, 0x0002, 0)
     if user32.SetForegroundWindow(hwnd):
         return True
-    # Last resort for a locked-down desktop: the call Alt+Tab itself uses.
     user32.SwitchToThisWindow(hwnd, True)
     return True
 
 
 def open_local_folder(path: str) -> None:
-    """Open one folder in Explorer and bring its window to the front."""
+    """Open a folder in Explorer and attempt to raise its window."""
     if platform.system() != "Windows":
         raise RuntimeError("打开本地目录目前仅支持 Windows。")
     target = os.path.realpath(path)

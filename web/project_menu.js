@@ -116,9 +116,6 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
     const chevron = makeElement("span", "minimax-project-chevron", "▾");
     currentCard.append(chevron);
 
-    // The folder the current bin lives in is a property of the bin, so the open
-    // button sits beside the project card instead of inside the popup. It always
-    // acts on the project the menu currently shows.
     const openDirBtn = makeElement("button", "minimax-project-open", "📂 打开本地目录");
     openDirBtn.type = "button";
     openDirBtn.title = "在资源管理器中打开当前项目的素材库文件夹";
@@ -165,15 +162,10 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         option.textContent = `${count} 列`;
         columnsSelect.appendChild(option);
     }
-    // The button no longer opens or hides anything: it puts the cursor into the
-    // always-visible name field, so typing can also start with a click on the field.
     const newBtn = makeElement("button", "minimax-project-new-btn", "＋ 新建项目");
     newBtn.type = "button";
     newBtn.title = "把光标放进项目名称框";
 
-    // The name field and its buttons are always on screen: no second line, no
-    // toggling. The two buttons stay disabled until the field holds something, so
-    // the row reads as "type a name, then confirm".
     const createGroup = makeElement("div", "minimax-project-create");
     const nameInput = document.createElement("input");
     nameInput.type = "text";
@@ -188,9 +180,6 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
 
     searchRow.append(newBtn, createGroup, searchInput, sortSelect, sortDirBtn, columnsSelect);
 
-    // Deleting a bin is confirmed in a centered card over the grid, not in a row
-    // above it: the sentence names what the delete removes, the two buttons sit
-    // together, and the destructive click is a deliberate one.
     const deleteRow = makeElement("div", "minimax-project-confirm");
     deleteRow.hidden = true;
     const confirmCard = makeElement("div", "minimax-project-confirm-card");
@@ -461,8 +450,6 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         nameInput.blur();
     }
 
-    // Nothing can be confirmed until a real name is in the field; whitespace alone
-    // does not count, which matches what the backend accepts.
     function syncCreateButtons() {
         const ready = nameInput.value.trim().length > 0;
         createBtn.disabled = !ready;
@@ -509,8 +496,6 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         openModal();
     };
 
-    // Opening a folder is a one-click action, so the label has to say what happened
-    // even when it fails: a silent click on this button would read as a broken node.
     const OPEN_DIR_LABEL = "📂 打开本地目录";
     const OPEN_DIR_TITLE = "在资源管理器中打开当前项目的素材库文件夹";
     let openDirTimer = 0;
@@ -560,8 +545,6 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
     document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape" || !modalOpen) return;
         event.stopPropagation();
-        // Escape backs out of the confirmation first, so a half-pressed delete
-        // cannot take the whole menu (and the clicked project) with it.
         if (!deleteRow.hidden) {
             closeDeleteRow();
             return;
@@ -607,8 +590,6 @@ export function createProjectMenu({ node, widget, signal, mode = "picker" }) {
         event.stopPropagation();
         resetCreateInput();
     };
-    // Enter in the name field does call createProject; the button has to do the same,
-    // otherwise the form only works for keyboard users.
     createBtn.onclick = (event) => {
         event.preventDefault();
         event.stopPropagation();

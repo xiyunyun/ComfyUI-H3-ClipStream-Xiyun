@@ -168,7 +168,7 @@ def get_project_dir(project_name: str) -> str:
 
 
 def existing_project_dir(project_name: Any) -> str:
-    """The project folder as it is on disk; never creates anything."""
+    """Return an existing project folder without creating it."""
     path = _project_dir_for(project_name)
     if not os.path.isdir(path):
         raise FileNotFoundError("项目目录不存在，请先保存至少一张卡片。")

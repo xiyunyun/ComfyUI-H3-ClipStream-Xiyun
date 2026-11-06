@@ -3,55 +3,19 @@
 > 版本铁规：每次改动前，把旧版本完整快照存入 `archive/<日期>-<commit 短 hash>/`，并在本文件顶部追加一条说明。
 > 只有用户的明确命令才能删改 `archive/` 中的旧版本。
 
-## 2026-11-05 · 「打开本地目录」打开后置前，修复窗口停在浏览器后面
+## 2026-11-06 · 融合原版 `f40099a`（本 fork）
 
-- 现象：点击「📂 打开本地目录」后资源管理器确实打开了，但窗口停在浏览器后面。
-- 根因：Windows 前台锁定。请求由 ComfyUI 服务进程处理，服务进程不是当前前台进程，Windows 不允许它启动的资源管理器窗口抢占前台。
-- 修复：新增 `clipbin/local_folder.py`：打开前记录已有资源管理器窗口，`os.startfile` 后在最多 2 秒内轮询新的 `CabinetWClass` 窗口（优先新增句柄，其次按项目名匹配标题），`SW_RESTORE` + `BringWindowToTop` + `SetForegroundWindow`；直接置前失败时用一次 Alt 键释放前台锁定后重试。找不到窗口或置前失败只记日志，目录仍已打开，接口仍返回成功。
-- 验证：全部 `web/*.js` 通过 `node --check`；Python **228/228 通过（1 项既有权限跳过）**（新增 3 条置前测试）。实际前台效果由用户复测。
+- 内容合并原版 `f40099a`：原版已吸收本 fork 的项目菜单工具栏、居中删除确认、`📂 打开本地目录` 与资源管理器置前逻辑，本轮只做冲突收敛，不改动功能行为。
+- 冲突处理：`VERSION.md` 采用原版；`clip_bin_api.py`、`clip_bin_manager.py`、`local_folder.py`、`tests/test_projects_api.py`、`clip_bin_picker.css`、`long_builder.css`、`project_menu.js` 采用原版（与本 fork 的实现逻辑一致，仅注释与个别字号不同）。
+- 保留 fork 独有内容：`fork_guard.py`、`tests/test_fork_guard.py`、`__init__.py` 的共存检测、根目录提示 txt。原版明确不接收这些内容。
 
-## 2026-11-05 · 项目素材库增加「📂 打开本地目录」
+## 2026-11-06 · Xiyun 项目菜单与本地目录功能融合（待用户实机验收）
 
-- 共用的项目菜单第一行在项目卡片右侧新增「📂 打开本地目录」按钮（`minimax-project-open`），作用于当前选中的项目；Picker / Dual Picker / Long Builder 都显示同一个按钮。
-- 新增 `POST /minimax/clip_bin/project/open`：只接受同源 JSON 请求，通过 `existing_project_dir()` 解析项目文件夹且**不会创建**目录；目录不存在返回 404；在 ComfyUI 主机上用资源管理器打开（目前仅 Windows），不读取、上传或复制文件。
-- 点击时按钮短暂禁用防重复；成功显示「📂 已打开」，失败显示「⚠ 打不开目录」并把后端原因写进 `title`，2.6 秒后恢复原文案。
-- 验证：全部 `web/*.js` 通过 `node --check`；Python **225/225 通过（1 项既有权限跳过）**；前端 fit 16/16、排序 9/9、速度 5/5 通过。实际资源管理器弹出由用户复测。
-
-## 2026-11-04 · 项目弹窗删除确认改为居中确认卡
-
-- 删除确认不再占用网格上方的一行：改为覆盖项目弹窗的半透明遮罩 + 居中确认卡，包含标题「删除项目「名称」」、后果说明、`✔ 删除` / `✕ 取消` 与错误提示。旧布局会把整张网格向下推，提示句还会随网格滚走。
-- 打开确认时焦点落在「✕ 取消」；Esc 先退出确认、再关闭弹窗；点击遮罩不会执行删除，只保留取消按钮与 Esc 两种退出方式。
-- 同步删除随旧布局失效的 `.minimax-clip-bin-new` 行/输入框与 `.minimax-clip-bin-danger` 行样式，保留 `.minimax-clip-bin-new-error` 供重命名卡片使用。
-- 共享 `project_menu.js`，Dual Picker / 普通 Picker / Long Builder 一处生效；不改任何按钮的点击、禁用或数据读写逻辑。
-- 验证：全部 `web/*.js` 通过 `node --check`；Python **223/223 通过（1 项既有权限跳过）**；前端 fit 16/16、排序 9/9、速度 5/5 通过。实际视觉由用户复测。
-
-## 2026-11-04 · 节点内工具行统一为卡片式工具栏
-
-- Picker 头部改为卡片式工具栏（`clip_bin_picker.css`）：背景 `#16202e`、1px `#334155` 边框、圆角 8、内边距 7/9；标题 13px，刷新/缩放按钮 28px 高、13px 字号、6px 圆角，缩放百分比 12px / 44px。
-- Long Builder 的「卡片显示」行改为同款卡片（`long_builder.css`）；汇总区字号 12px、内边距 8/10、圆角 6、最大高度 42→64；顺序提示 11.5px，`↺ 按镜头序号` 按钮 26px 高 / 12px 字号。
-- 模式按钮统一 36px 高、13px 字号，模式说明 11.5px，页脚 12px。
-- 项目弹窗内部的紧凑按钮保持原尺寸，不受节点工具栏影响。
-- 不改任何按钮的点击/禁用逻辑、节点输入输出或数据读写；只改样式与两处 class 作用域。
-- 验证：全部 `web/*.js` 通过 `node --check`；Python **223/223 通过（1 项既有权限跳过）**；前端 fit 16/16、排序 9/9、速度 5/5 通过。实际视觉由用户复测。
-
-## 2026-11-04 · 项目弹窗工具栏：名称输入常驻，按钮按输入内容激活
-
-- 布局：`＋ 新建项目` → 名称输入框 → `✔ 建立` → `✕ 取消` → 搜索 → 排序 → 正/倒序 → 3–6 列，全部在同一个工具栏行。输入框与建立/取消不再隐藏或切换，弹窗打开时就是完整布局。
-- 尺寸：输入框与搜索框各 `flex: 1 1 0`、最小 `clamp(150px, 10vw, 200px)`，等分剩余宽度，视觉上约一半一半；输入框和两个按钮高度为控制行高的 95%，字号整体 +2px（新建 14–17、输入/建立/取消 13–16、搜索 13–16、排序 12–15、列数 12–15、方向 13–16）。
-- 交互：不必先点新建——直接点输入框即可输入；点「＋ 新建项目」只是把光标放进输入框并全选已有文字。输入至少一个非空白字符后，`✔ 建立`（绿色）与 `✕ 取消` 才从灰色禁用态变为可用；回车或点击建立提交，点击取消清空、失焦，并让两个按钮回到禁用态。
-- 防挤压：输入框与两个按钮通过 `display: contents` 参与同一行 flex 布局，按钮不收缩；窄窗口整组随行换行，搜索与排序随后换行，不会挤压文字。
-- 错误提示留在行内，超长省略并写入 `title`，不会把后面的控件顶走。
-- 删除确认行仍单独一行：提示句包含库名与卡片/视频数量，塞进工具栏会挤压输入区。
-- 共享组件：Dual Picker / 普通 Picker / Long Builder 共用 `project_menu.js`，一处生效。
-- 验证：`node --check` 通过；Python **223/223 通过（1 项既有权限跳过）**（无后端改动）。实际观感由用户复测。
-
-## 2026-11-03 · 修复项目菜单「✔ 建立」点击无效，新建按钮左移放大
-
-- 缺陷：上游 `ba4ed38` 重写 `web/project_menu.js` 时只保留了名称输入框的回车提交，漏掉 `createBtn.onclick`。「＋ 新建项目」展开后点「✔ 建立」没有反应，只能按回车。
-- 修复：给 `createBtn` 补上与回车相同的点击处理（`createProject()`），两种提交方式行为一致。
-- 新建按钮从工具栏最右侧移到最左侧，改为主色大按钮 `minimax-project-new-btn`：字号/内边距用 `clamp()`，`flex: 0 0 auto` + `white-space: nowrap`，永不收缩；窗口变窄时搜索框换到下一行，不会挤压按钮文字。
-- Dual Picker、普通 Picker 与 Long Builder 共用同一份 `project_menu.js`，一处修复覆盖三个节点的弹层。
-- 验证：`node --check` 全部通过；Python **223/223 通过（1 项既有权限跳过）**（无后端改动）。实际点击建库由用户在 ComfyUI 中复测。
+- 快照：`archive/2026-11-06-ba4ed38-pre-xiyun-ui/clipstream-ba4ed38.zip` 保存融合前原版 `ba4ed38`；功能来源仅为 Xiyun `07510a1`、`5ff1bd0`、`df62a56`、`941490a`、`045988b`，不接收共存守卫、节点注册绕过或专属提示文件。
+- 修复项目弹窗「✔ 建立」只有回车有效的问题；名称输入框、建立与取消按钮常驻工具行，输入有效名称后才可提交。Picker、Dual Picker 与 Long Builder 共用同一实现。
+- 删除项目改为弹窗内居中确认卡，Esc 先退出确认；Picker 工具行和 Builder 卡片工具行统一为卡片式布局，不改变卡片排序、拼接、速度或帧率逻辑。
+- 项目行新增「📂 打开本地目录」，通过同源 `POST /minimax/clip_bin/project/open` 只打开已经存在的项目目录，不创建目录、不接收任意磁盘路径；Windows 打开后尝试将资源管理器窗口置前，置前失败不影响目录已经打开。
+- 自动验证：完整 Python **223 项通过、1 项既有 Windows 目录链接权限跳过**，新增 5 项覆盖现有/缺失目录与资源管理器置前；前端 **30 项通过**，全部 **9 个** `web/*.js` 语法检查通过，`git diff --check` 通过。实际视觉、新建点击和资源管理器行为由用户在 ComfyUI 中验收。
 
 ## 2026-11-03 · 项目菜单卡顿第一轮优化（已验收）
 
@@ -70,16 +34,6 @@
 - Dual Picker、普通 Picker 与 Long Builder 使用项目卡片菜单，支持封面、数量、修改时间、搜索、排序、3–6 列、新建、重命名与删除；重命名冲突拒绝并在失败时回滚。
 - 原版 `c456e07` 的 Builder 三区布局、拼接与速度设置、自动输出帧率、卡片缩放和预览折叠全部保留；只把原项目下拉框替换为卡片菜单，并把刷新按钮留在卡片工具行。
 - 自动验证：完整 Python **218 项通过、1 项既有 Windows 目录链接权限跳过**；新增 Trim `frames_cap` 3 项覆盖尾部上限、旧行为兼容、非法裁切及音画同步。前端 fit **16/16**、排序 **9/9**、速度 **5/5** 通过，全部 **9 个 `web/*.js`** 语法检查通过。浏览器视觉、项目重命名/删除与实际拼接由用户验收。
-
-## 2026-11-03 · 合并上游卡顿优化与 Builder 基线，保留共存守卫（本 fork 独有）
-
-- 合并上游 `c456e07`（Clip Bin 读取/存盘性能、Long Builder 三区面板与速度/自动帧率）、`6eb3344`（基线记录）、`ba4ed38`（项目卡片菜单与 `frames_cap`）。
-- 上游的项目菜单已修好本 fork 之前记录的卡顿点：数据未变化时不整表重绘、当前封面不重建、网格用 `DocumentFragment` 一次插入、列数切换只改 CSS、移除项目弹层全屏 `backdrop-filter`、同一列表地址的并发请求合并（`projectRequests`，结束即释放，不引入 TTL 缓存）。本 fork 直接采用这一版，不再保留自己的旧的 702 行 `project_menu.js`。
-- 冲突处理：`VERSION.md` 手工合并；`clipbin/long_builder.py`、`clipbin/long_nodes.py`、`tests/test_node_schema.py`、`web/clip_bin_picker.css`、`web/long_builder_panel.js`、`web/project_menu.js` 采用上游版本；`clipbin/clip_bin_api.py`、`clipbin/clip_bin_manager.py`、`web/clip_bin_picker.js` 自动合并后逐个核对，最终与上游一致。合并后树内除守卫相关文件外与上游一致。
-- **Long Builder 参数改名**：上游把本 fork 之前的 `restore_playback_speed` / `restore_playback_speed_custom` 定为 `playback_speed` / `playback_speed_custom`（语义相同，位置仍是输入末尾 8/9）。按名字恢复时旧工作流的这两项会回落到默认值；本机两份旧工作流只存过 `1.0x` 与 `custom=1.0`，实际成片行为不变。若其他用户的旧工作流存过 `0.5x` / `0.75x`，需要在 Long Builder 里重新选择一次。
-- 删除过时的 `tests/test_speed_restore.py` 与 `tests/test_long_builder.py` 里本 fork 旧 `apply_speed_restore` 的 51 行用例：它们测试的函数已被上游 `parse_playback_speed` / 自动帧率实现取代，上游自带的速度用例继续保留。
-- 本 fork 独有内容保留：`fork_guard.py`、`__init__.py` 的共存检测、`tests/test_fork_guard.py`、根目录提示 txt。
-- 验证：完整 Python **223/223 通过（1 项既有权限跳过）**；前端 fit **16/16**、排序 **9/9**、速度 **5/5** 通过；9 个 `web/*.js` 全部通过 `node --check`；无冲突标记残留。
 
 ## 2026-10-27 · `c456e07`（原版功能基线）
 

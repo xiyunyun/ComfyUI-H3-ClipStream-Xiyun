@@ -41,7 +41,6 @@ from .long_builder import (
     probe_video_streams,
 )
 
-
 from .local_folder import open_local_folder
 
 
@@ -472,7 +471,7 @@ def register_clip_bin_routes() -> None:
 
     @routes.post("/minimax/clip_bin/project/open")
     async def handle_open_project(request):
-        """Open one project bin's folder in the host's file manager."""
+        """Open one existing project folder on the ComfyUI host."""
         blocked = _csrf_block(request)
         if blocked is not None:
             return blocked

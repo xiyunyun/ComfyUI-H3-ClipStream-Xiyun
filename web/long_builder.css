@@ -92,7 +92,6 @@
     white-space: nowrap;
 }
 
-/* 卡片显示 sits in its own tool card, matching the deck headers in the Pickers. */
 .h3-lb-card-toolbar {
     padding: 7px 9px;
     gap: 8px;
@@ -115,7 +114,6 @@
     margin-left: auto;
 }
 
-/* Tool-card controls share the header geometry with the Pickers. */
 .h3-lb-card-toolbar .minimax-clip-bin-refresh-btn {
     flex: 0 0 auto;
     display: inline-flex;

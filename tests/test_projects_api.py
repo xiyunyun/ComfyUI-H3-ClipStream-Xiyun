@@ -372,8 +372,6 @@ class TestCardVideoProbe(BinFixture):
 
 
 class TestProjectFolderPath(BinFixture):
-    """Where the panel's "打开本地目录" button points for the current bin."""
-
     def test_an_existing_project_resolves_without_creating(self):
         os.makedirs(os.path.join(self.store, "Movie"), exist_ok=True)
         self.assertEqual(cbm.existing_project_dir("Movie"),
@@ -387,14 +385,6 @@ class TestProjectFolderPath(BinFixture):
 
 
 class TestLocalFolderRaisesExplorer(BinFixture):
-    """The opened folder has to reach the front, not just the taskbar.
-
-    Explorer is started by a background process (the ComfyUI server), so Windows'
-    foreground lock leaves the new window behind the browser. The module finds the
-    window the shell just made and raises it; these tests drive that lookup and the
-    raise without opening anything.
-    """
-
     def setUp(self):
         super().setUp()
         self.folder = _support.load_clipbin_module("local_folder")
@@ -417,14 +407,12 @@ class TestLocalFolderRaisesExplorer(BinFixture):
         with mock.patch.object(self.folder, "_explorer_windows",
                                side_effect=[[(1, "Movie")], [(1, "Movie"), (2, "Other")]]):
             with mock.patch("ctypes.windll", mock.MagicMock(), create=True):
-                # The raise path needs a real user32; only the lookup is under test here.
                 self.assertTrue(self.folder._raise_explorer(
                     os.path.join(self.store, "Movie"), {1}, timeout=0.5))
 
     def test_no_window_appearing_is_not_an_error(self):
         with mock.patch.object(self.folder, "_explorer_windows", return_value=[]):
             self.assertFalse(self.folder._raise_explorer(self.store, set(), timeout=0.2))
-
 
 if __name__ == "__main__":
     unittest.main()
