@@ -1,8 +1,66 @@
+## 2026-11-14 · 融合原版 `581eeae`（本 fork）
+
+- 内容合并原版 `6d9b18d`、`3d01325`、`b90f36d`、`65b9e7e`、`2223cb0`、`581eeae`：Long Builder 失效排序/排除引用清理、新增「H3 Overlap Restore / 原始重叠恢复」节点、普通与 Dual Picker 严格类型隔离、移除两个 Picker 的 `custom_clip_path` 输入、Picker 隐藏无对应类型卡片的项目、Long Builder 切换项目重置卡片状态。
+- 行为变化提醒：Dual Picker 不再把普通 Saver 的 `latent.safetensors` 当作一采读取；两个 Picker 不再接受绝对路径选片。旧工作流仍可打开（残留值由 `**kwargs` 接收），但路径不再生效。
+- 冲突处理：`VERSION.md` 采用原版条目并保留本 fork 历史；其余文件（`README.md`、`clipbin/*`、`motion_context/*`、`web/*`、`tests/*`）直接采用原版。
+- 保留 fork 独有内容：`fork_guard.py`、`tests/test_fork_guard.py`、`__init__.py` 的共存检测、根目录提示 txt。原版在 `VERSION.md` 中明确不接收这些内容。
+
+## 2026-11-12 · Long Builder 切换项目清理旧卡片记录
+
+- 切换项目立即清空上一项目的手动排序与排除记录；同项目刷新保留设置。
+- 成功读取项目后清理排序和排除字段的失效引用；后端忽略旧排序引用，不再逐条报找不到卡片。
+- 异步响应在读取完成后再次检查项目与请求编号，避免旧项目响应覆盖新项目。
+- 验证：Python 259 项（258 通过、1 项既有权限跳过）；前端 45 项通过；全部 9 个 JavaScript 语法检查通过。
+- 修改前快照：`archive/2026-11-12-2223cb0-pre-builder-project-reset/clipstream-2223cb0.zip`。
+
+## 2026-11-12 · Picker 隐藏无对应卡片的项目
+
+- 普通和 Dual 项目池仅显示含对应 Saver 卡片的项目；混合项目可分别出现，计数和封面仍按类型筛选。
+- 前端刷新不再将当前无对应卡片的项目重新塞回项目池；节点当前项目名保留，支持首段生成。
+- 不改变无类型筛选的项目接口及 Long Builder 视频筛选。
+- 验证：Python 259 项，258 通过、1 项既有权限跳过；前端 42 项通过，9 个 JavaScript 文件语法检查通过。
+- 修改前快照：`archive/2026-11-12-65b9e7e-pre-hide-empty-projects/clipstream-65b9e7e.zip`。
+
 # 版本说明（VERSION.md）
 
 > 版本铁规：每次改动前，把旧版本完整快照存入 `archive/<日期>-<commit 短 hash>/`，并在本文件顶部追加一条说明。
 > 只有用户的明确命令才能删改 `archive/` 中的旧版本。
 
+## 2026-11-12 · 移除两个 Picker 的绝对路径输入
+
+- 用户要求关闭无人使用的绝对路径入口。普通 Picker 与 Dual Picker 移除 `custom_clip_path` schema 输入及路径覆盖分支，统一通过项目库和卡片 ID/标签选片；未匹配当前项目卡片的输入不再作为文件夹路径读取。
+- 旧工作流残留的路径值可由既有 `**kwargs` 接收但不再使用，不会覆盖项目选择或 Force Initial。其余输入及输出顺序不变，普通与 Dual 类型隔离继续有效。
+- 修改前快照：`archive/2026-11-12-b90f36d-pre-remove-picker-path/clipstream-b90f36d.zip`。
+- 验证：完整 Python 回归 258 项，257 通过、1 项既有权限跳过；其中隔离与旧路径残留专项 22 项通过，节点 schema 验证确认路径输入已移除。Python AST 与 `git diff --check` 通过。
+- 延续本轮用户部署测试要求，部署仅需 `clipbin/nodes.py`、`clipbin/dual_nodes.py`；实际部署及备份记录见全局 CHANGELOG.md。未推送 GitHub，未修改用户工作流文件。
+
+## 2026-11-12 · 普通与 Dual Picker 严格隔离
+
+- 基线：本地开发提交 `3d01325`；修改前完整 Git 快照：`archive/2026-11-12-3d01325-pre-picker-isolation/clipstream-3d01325.zip`。
+- 按实际 latent 文件格式区分普通 Saver 与 Dual Saver；Dual 只有一采或只有二采时仍按 Dual 处理。混放两种 latent 命名的异常文件夹不自动归类，也不读取。
+- 普通与 Dual Picker 的卡片列表、项目内卡片计数、封面、Auto 最新、Strict 接续、手填 ID 与自定义路径统一执行类型隔离；Dual 磁盘扫描不再引入普通卡片，移除将普通 latent 当作一采读取的兼容分支。
+- 仅存在另一类卡片时，Auto/latest 输出首段空 latent，Strict 与手动选择不可读卡片时明确拒绝。两组节点的 ID、输入与输出顺序保持不变。
+- 素材及共享项目索引不迁移、不删除；项目菜单仍可选择空库。删除项目确认显示全项目总数，并明确包含普通与 Dual 卡片。Long Builder 的混合项目视频列表及拼接代码未改动。
+- 验证：完整 Python `python -B -m unittest discover -s tests -t .` 共 **257 项，256 通过、1 项既有权限跳过**；新增类型隔离专项 21 项通过。原有前端 **32 项通过**，新增真实面板初始化及请求隔离 **6 条断言通过**；全部 9 个 `web/*.js` 语法检查及 Python AST、`git diff --check` 通过。
+- 状态：仅本地开发与提交，未推送 GitHub，未部署到 ComfyUI 运行目录；浏览器和真实工作流待后续部署后实测。之前重叠恢复节点的测试与推送限制继续保留。
+
+## 2026-11-12 · 二采后原始重叠 token 恢复节点
+
+- 基线：当前运行副本干净提交 `6d9b18d`；旧 `projects` 副本仍为 `6eb3344`，本次未用旧副本覆盖当前功能。开发副本在 `C:\Users\az\Documents\ChatGPT\插件维护\ComfyUI-H3-ClipStream`。
+- 修改前完整 Git 快照：`archive/2026-11-12-6d9b18d-pre-overlap-restore/clipstream-6d9b18d.zip`。
+- 新增 `MiniMaxH3OverlapRestoreClipStream`，显示名 `H3 Overlap Restore / 原始重叠恢复 (ClipStream)`，分类 `latent/minimax`。放在二采最终采样之后、解码和 latent 保存之前。
+- `samples` 接当前二采，`context_latent` 接上一段原始二采（若加噪则从加噪前取），`trim_frames` 强制连到对应 Motion Context 输出。首段 0 与关闭时透传，5/22/39/56 帧分别复制 2/7/12/17 步。没有加入颜色补偿或融合。
+- 只克隆并改动当前视频重叠区。保留新内容、音频及其他流的对象、latent 元数据和容器类型。检查批次、24 通道、分辨率、精度、长度及父段尾部周期；非法输入报错。
+- 自动验证：完整 Python `unittest discover -s tests` 共 236 项，235 通过、1 项既有 Windows 目录链接权限跳过；新增专项 12 项全部通过。覆盖精确复制、不修改输入、未来 token 不变、音频与元数据保留、首段/关闭、四种容器和输入错误；节点 schema 注册测试通过。
+- 真实数据：读取既有「呆猫鱼鱼」项目六组二采接续 latent，均验证前 7 步与父段尾 7 步完全相同、第 7 步之后与输入完全相同、输入视频及音频未改动；覆盖 47/67/72 步三种片长，均为 float32。未重新采样或解码，未修改素材库。
+- 部署状态：尚未覆盖 ComfyUI 运行副本，未自动重启或修改用户工作流。
+
+## 2026-11-07 · Long Builder 失效排除引用清理（待用户实机验收）
+
+- 快照：`archive/2026-11-07-f40099a-pre-stale-excludes/clipstream-f40099a.zip` 保存本轮前 `f40099a` 完整 Git 基线。
+- 已删除卡片残留在 `exclude_clips` 中的引用不再逐条产生「要排除的镜头……在库里找不到」警告；有效排除项、手动顺序及拼接结果不变。
+- Long Builder 每次成功读取当前项目卡片后，自动从隐藏排除字段移除失效引用并保存回工作流；有效的卡片 ID、Shot 标签及其顺序保持原样。手动排序字段的既有警告逻辑未改。
+- 自动验证：完整 Python **224 项通过、1 项既有 Windows 目录链接权限跳过**；前端 **32 项通过**，全部 **9 个** `web/*.js` 语法检查通过。真实 ComfyUI 工作流重开与拼接由用户验收。
 ## 2026-11-06 · 融合原版 `f40099a`（本 fork）
 
 - 内容合并原版 `f40099a`：原版已吸收本 fork 的项目菜单工具栏、居中删除确认、`📂 打开本地目录` 与资源管理器置前逻辑，本轮只做冲突收敛，不改动功能行为。

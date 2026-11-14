@@ -188,7 +188,9 @@ def resolve_shot_order(clips: List[Dict[str, Any]],
     as the same kind of references and read top to bottom. Cards it does not mention
     are appended in shot-number order, so a segment generated after the last drag
     still joins the film instead of silently disappearing; a reference it names that is
-    no longer in the bin is reported and skipped.
+    no longer in the bin is silently skipped as stale project state.
+    Stale exclusion references are simply ignored: a deleted card cannot be excluded
+    again, and old widget state must not bury useful warnings under one line per card.
 
     Returns (clip_ids in join order, warnings).
     """
@@ -199,16 +201,13 @@ def resolve_shot_order(clips: List[Dict[str, Any]],
     excluded = set()
     for ref in parse_sequence(exclude_text):
         clip = find_clip(clips, ref)
-        if clip is None:
-            warnings.append("要排除的镜头「%s」在库里找不到（可能已删除）" % ref)
-        else:
+        if clip is not None:
             excluded.add(clip["clip_id"])
 
     manual: List[str] = []
     for ref in parse_sequence(clip_order):
         clip = find_clip(clips, ref)
         if clip is None:
-            warnings.append("手动顺序里的镜头「%s」在库里找不到（可能已删除）" % ref)
             continue
         clip_id = str(clip["clip_id"])
         if clip_id in excluded or clip_id in manual:

@@ -10,6 +10,8 @@ Long Builder stitches a project's archived shots into one film — pick the proj
 
 ## English
 
+**Picker isolation:** the ordinary Picker only loads cards saved by the ordinary Clip Bin Saver; the Dual Picker only loads Dual Saver cards, including cards with just one pass. Galleries, counts, covers and automatic continuation follow the same rule. A manually entered clip ID cannot cross formats. Pickers load clips through the project gallery; absolute-path input is no longer available. Existing files stay in place, and a shared project may contain both types. Deleting a project still deletes the whole project, including both types.
+
 > **One plugin, two jobs:** a **visual, searchable Clip Bin** for MiniMax H3, plus **seamless audio-video continuation** (Motion-Context) between shots.
 
 | Component | Source | Role |
@@ -96,7 +98,23 @@ Long films built by the Long Builder go to `output/h3_long/<project_name>/` and 
 
 ---
 
-### Nodes (14 total)
+### Nodes (15 total)
+
+**H3 Overlap Restore (ClipStream)** is a new optional post-pass-2 node. It copies
+the previous clip's original video tail tokens into the current clip's sampled
+overlap. New-content tokens, current audio and latent metadata are unchanged.
+Connect final pass-2 output to `samples`, Dual Picker's original pass-2 latent
+to `context_latent`, and the pass-2 Motion Context's `trim_frames` to
+`trim_frames` (required wire). Its output feeds **both** video decode and the
+pass-2 latent saver. Decode audio from the same output if using AV separation.
+Keep Motion Context Trim **after** decode; this node does not trim anything.
+
+`trim_frames=0` (initial clip) or `enabled=False` passes through unchanged.
+Continuation supports 5/22/39/56 frames (2/7/12/17 latent steps). Missing parent,
+resolution/batch/precision mismatch, a too-short clip or misaligned parent tail
+raises an error rather than guessing. If context noise is enabled, branch
+`context_latent` **before noise injection**. This node does not add noise,
+blend tokens, perform color correction, or promise an invisible seam.
 
 #### Clip Bin (`MiniMaxH3/ClipStream`)
 
@@ -317,6 +335,8 @@ ComfyUI-H3-ClipStream/
 
 ## 简体中文
 
+**Picker 类型隔离：**普通 Picker 只读取普通 Clip Bin Saver 卡片，Dual Picker 只读取 Dual Saver 卡片（仅保存一采或二采也属于 Dual）。项目池仅显示含对应类型卡片的项目；卡片列表、数量、封面和自动接续均按同一规则筛选，手填卡片 ID 也不能跨类型读取。Picker 统一通过项目库选片，已移除绝对路径输入。已有文件保留原位，同一项目可同时存放两种卡片；删除整个项目仍会删除两种卡片。
+
 > **一个插件，两件事：** 给 MiniMax H3 一个**可视化、可搜索的镜头素材库（Clip Bin）**，并让镜头之间**音画无缝接续（Motion-Context）**。
 
 | 组件 | 来源 | 作用 |
@@ -403,7 +423,34 @@ Long Builder 拼出的长片在 `output/h3_long/<项目名>/`，**不属于卡�
 
 ---
 
-### 节点清单（共 14 个）
+### 节点清单（共 15 个）
+
+新增可选节点 **H3 Overlap Restore / 原始重叠恢复 (ClipStream)**：
+在二采最终采样之后，将上一段原始视频尾部 token 原样复制到当前段重叠区。
+只修改视频重叠区，新内容 token、当前段音频和 latent 附加信息不变。
+
+接线如下：
+
+```text
+二采最终采样器输出 ───────────────> samples
+Dual Picker.latent_二采 ─────────> context_latent（上一段原始二采）
+本段二采 Motion Context.trim_frames -> trim_frames
+                                      |
+                               原始重叠恢复节点
+                                      |
+                           ┌──────────┴───────────┐
+                           视频解码              二采 latent 保存
+                              |
+                           原有 Trim -> 视频归档
+```
+
+- `trim_frames` 必须连线，不手填；首段为 0 时自动透传。`enabled` 关闭也原样透传。
+- 支持 5/22/39/56 帧，对应 2/7/12/17 个 latent 时间步。22 帧接续就替换前 7 步。
+- `context_latent` 必须取上一段原始二采；如果启用了上下文加噪，必须在加噪之前分支接入。
+- 两段须同分辨率、批次与精度，父段尾部须符合 H3 时间周期；缺父段、长度不足或不匹配会明确报错。
+- 仍在解码之后使用原有 Trim。本节点不裁切、不加噪、不融合、不做颜色补偿。
+- 使用恢复后的输出同时解码和保存二采 latent，确保保存内容与成片一致。音频可沿同一 AV 输出解码，数据不变。
+- 这是重叠区恢复工具，不保证所有场景都达到肉眼完全无缝。
 
 #### Clip Bin（类别 `MiniMaxH3/ClipStream`）
 

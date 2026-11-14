@@ -46,6 +46,16 @@ function findCard(cards, reference) {
         || null;
 }
 
+// Deleted cards must not remain in the hidden exclusion widget forever. Keep valid
+// references in their original form and order; only rewrite the widget when something
+// stale was actually removed.
+export function pruneMissingExclusions(text, cards) {
+    const original = String(text || "");
+    const references = parseOrder(original);
+    const retained = references.filter(reference => findCard(cards, reference));
+    return retained.length === references.length ? original : retained.join(",");
+}
+
 // Returns { deck, joinIds }: the cards to render, and the clip_ids that will be joined
 // in that order. Cards that cannot join (switched off, no archived video) come last and
 // never appear in joinIds, so the widget only ever holds real segments.
@@ -56,7 +66,7 @@ export function resolveDeckOrder(cards, orderText, excludedIds) {
     const placed = [];
     for (const reference of parseOrder(orderText)) {
         const card = findCard(joinable, reference);
-        // A reference whose card is gone is dropped here; the node reports it.
+        // Missing references are stale project state and are ignored.
         if (card && !placed.includes(card)) placed.push(card);
     }
     const ordered = placed.concat(joinable.filter(card => !placed.includes(card)));
@@ -76,4 +86,11 @@ export function moveCard(ids, draggedId, targetId, before) {
     if (at < 0) return [...original];
     list.splice(before ? at : at + 1, 0, draggedId);
     return list;
+}
+
+// Project switches reset all project-local decisions, even shared shot-tag references.
+export function projectCardState(previousProject, project, order, exclusions) {
+    return previousProject === project
+        ? { order: String(order || ""), exclusions: String(exclusions || "") }
+        : { order: "", exclusions: "" };
 }
